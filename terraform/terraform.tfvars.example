@@ -1,0 +1,49 @@
+# AWS Configuration
+aws_region = "us-east-1"
+
+# S3 Bucket Configuration (bucket name must be globally unique)
+bucket_name = "my-company-bedrock-logs"
+
+# Optional: Force destroy bucket even with objects (use with caution in production)
+# force_destroy = false
+
+# Optional: Enable versioning for log files (recommended)
+# enable_versioning = true
+
+# Log Retention Configuration
+# Number of days to retain logs (0 = indefinite retention)
+log_retention_days = 90
+
+# Optional: Retain non-current versions for 30 days
+# noncurrent_version_expiration_days = 30
+
+# Optional: Storage class transitions for cost optimization
+# Transition to STANDARD_IA after N days (0 = disabled)
+# transition_to_ia_days = 30
+
+# Transition to GLACIER after N days (0 = disabled)
+# transition_to_glacier_days = 90
+
+# Optional: Use KMS encryption instead of AES256
+# kms_key_id = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+
+# Optional: Specify AWS account ID explicitly (auto-detected if not set)
+# aws_account_id = "123456789012"
+
+# IAM Role Configuration
+# Create IAM role for AI reporter application
+create_iam_role = true
+iam_role_name   = "ai-reporter-role"
+
+# Service principals that can assume the role
+assume_role_principals = [
+  "ec2.amazonaws.com",
+  "ecs-tasks.amazonaws.com"
+]
+
+# Tags
+tags = {
+  Environment = "production"
+  Project     = "ai-metrics"
+  ManagedBy   = "terraform"
+}
