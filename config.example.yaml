@@ -1,0 +1,44 @@
+# Configuration for AI Engineering Metrics pipeline
+# This file follows the current schema where everything is organized into pipelines
+
+pipelines:
+  - # Pipeline 1: Main AI metrics collection pipeline
+    collectors:
+      - name: bedrock-s3 # of the tool as it appears in GetDX
+        type: bedrock
+        enabled: true
+        config:
+          bucket: my-bedrock-logs-bucket
+          prefix: bedrock-logs/
+          # local_path: /tmp/bedrock-logs  # Optional: local directory for temporary file storage
+        user_mapping:
+          type: passthrough
+          config: {}
+          # Alternative user mapping options:
+          # type: static
+          # config:
+          #   session-123: user@example.com
+          #   session-456: another@example.com
+          # type: regex
+          # config:
+          #   regex: 'session-(.+)'
+          #   replacement: 'user-$1@example.com'
+
+    publishers:
+      - name: getdx
+        type: getdx
+        enabled: true
+        config:
+          api_url: https://api.getdx.com/v1/metrics
+          api_key: ${GETDX_API_KEY}
+
+    # User filtering configuration
+    users:
+      type: static
+      config:
+        user_ids:
+          - user@example.com      # Include specific users
+          - admin@example.com
+          - service-account-123
+          # Add more user IDs as needed
+

@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/mapper"
+	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -24,12 +27,16 @@ var _ s3Client = (*s3.Client)(nil)
 
 // BedrockCollector collects metrics from AWS Bedrock logs stored in S3
 type BedrockCollector struct {
+	localPath  string
 	s3Client   s3Client
 	bucketName string
 	prefix     string
 	toolName   string
-	mapper     mapper.Mapper
+	mapper     mapper.UserIDMapper
+	filter     users.UsersList
 }
+
+var _ Collector = (*BedrockCollector)(nil)
 
 // BedrockLogEntry represents a single log entry from Bedrock
 type BedrockLogEntry struct {
@@ -75,13 +82,15 @@ type AggregatedMetric struct {
 }
 
 // NewBedrockCollector creates a new Bedrock collector
-func NewBedrockCollector(s3Client s3Client, bucketName, prefix, toolName string, mapper mapper.Mapper) *BedrockCollector {
+func NewBedrockCollector(s3Client s3Client, localPath, bucketName, prefix, toolName string, mapper mapper.UserIDMapper, filter users.UsersList) *BedrockCollector {
 	return &BedrockCollector{
+		localPath:  localPath,
 		s3Client:   s3Client,
 		bucketName: bucketName,
 		prefix:     prefix,
 		toolName:   toolName,
 		mapper:     mapper,
+		filter:     filter,
 	}
 }
 
@@ -124,13 +133,15 @@ func (c *BedrockCollector) aggregateFromJSONData(ctx context.Context, aggregated
 		return fmt.Errorf("failed to parse bedrock logs: %w", err)
 	}
 	for _, entry := range entries {
-		fmt.Printf("entry: %+v\n", entry)
 		if entry.Timestamp.Before(from) || entry.Timestamp.After(to) {
 			continue
 		}
 		userID, err := c.mapper.Map(ctx, entry.Identity.ARN)
 		if err != nil {
 			return fmt.Errorf("failed to map user ID: %w", err)
+		}
+		if c.filter != nil && !c.filter.Include(userID) {
+			continue
 		}
 
 		metric := aggregated[userID]
@@ -140,7 +151,6 @@ func (c *BedrockCollector) aggregateFromJSONData(ctx context.Context, aggregated
 		metric.CacheWriteInputTokens += entry.Input.CacheWriteInputTokenCount
 		aggregated[userID] = metric
 	}
-	fmt.Printf("aggregated: %+v\n", aggregated)
 	return nil
 }
 
@@ -156,8 +166,20 @@ func (c *BedrockCollector) aggregateFromS3(ctx context.Context, aggregated map[s
 	return c.aggregateFromJSONData(ctx, aggregated, from, to, result.Body)
 }
 
+func (c *BedrockCollector) aggregateFromPath(ctx context.Context, aggregated map[string]AggregatedMetric, from, to time.Time, path string) error {
+	body, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open path %s: %w", path, err)
+	}
+	defer body.Close()
+	return c.aggregateFromJSONData(ctx, aggregated, from, to, body)
+}
+
 func (c *BedrockCollector) getPrefix(from, to time.Time) string {
-	parts := []string{c.prefix}
+	parts := []string{strings.TrimSuffix(c.prefix, "/")}
+	if c.localPath != "" {
+		parts = []string{c.localPath}
+	}
 	if from.Year() != to.Year() {
 		return strings.Join(parts, "/") + "/"
 	}
@@ -173,9 +195,22 @@ func (c *BedrockCollector) getPrefix(from, to time.Time) string {
 	return strings.Join(parts, "/") + "/"
 }
 
-// Collect retrieves metrics from S3 for the given time range
-func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map[string]Metric, error) {
+func (c *BedrockCollector) collectFromLocalPath(ctx context.Context, from, to time.Time, prefix string) (map[string]AggregatedMetric, error) {
+	aggregated := make(map[string]AggregatedMetric)
+	err := filepath.Walk(prefix, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		return c.aggregateFromPath(ctx, aggregated, from, to, path)
+	})
+	return aggregated, err
+}
 
+func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time, prefix string) (map[string]AggregatedMetric, error) {
+	panic(nil)
 	// List objects in the S3 bucket with the given prefix
 	paginator := s3.NewListObjectsV2Paginator(c.s3Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(c.bucketName),
@@ -197,18 +232,31 @@ func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map
 			}
 		}
 	}
-	fmt.Printf("aggregated: %+v\n", aggregated)
+	return aggregated, nil
+}
 
+// Collect retrieves metrics from S3 for the given time range
+func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map[ToolUsage]Metric, error) {
+
+	fmt.Printf("prefix: %s\n", c.getPrefix(from, to))
+
+	collectorFunc := c.collectFromS3
+	if c.localPath != "" {
+		collectorFunc = c.collectFromLocalPath
+	}
+
+	aggregated, err := collectorFunc(ctx, from, to, c.getPrefix(from, to))
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect metrics: %w", err)
+	}
 	return c.renderMetrics(from, to, aggregated), nil
 }
 
-func (c *BedrockCollector) renderMetrics(from, to time.Time, aggregated map[string]AggregatedMetric) map[string]Metric {
-	metrics := make(map[string]Metric)
+func (c *BedrockCollector) renderMetrics(from, to time.Time, aggregated map[string]AggregatedMetric) map[ToolUsage]Metric {
+	metrics := make(map[ToolUsage]Metric)
 	for userID, metric := range aggregated {
-		metrics[userID] = Metric{
+		metrics[ToolUsage{UserID: userID, ToolName: c.toolName}] = Metric{
 			UserID:   userID,
-			From:     from,
-			To:       to,
 			ToolName: c.toolName,
 			Metrics: map[string]any{
 				"input_tokens":             metric.InputTokens,
