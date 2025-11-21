@@ -20,27 +20,58 @@ The AI Metrics Reporter provides a flexible framework for:
 
 ## Architecture
 
+The application follows a pipeline pattern with parallel collection, aggregation, and fan-out publishing:
+
 ```
-┌─────────────┐
-│  Collectors │  (Bedrock S3, ...)
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Metrics   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ UserID      │
-│ Mapper      │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ Publishers  │  (GetDX, ...)
-└─────────────┘
+Pipeline
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  ┌─────────────┐    ┌─────────────┐                             │
+│  │ Collector 1 │    │ Collector 2 │    ... more collectors      │
+│  │ (Bedrock)   │    │ (Grafana)   │                             │
+│  │             │    │             │                             │
+│  │ ┌─────────┐ │    │ ┌─────────┐ │                             │
+│  │ │UserID   │ │    │ │UserID   │ │    Each collector has       │
+│  │ │Mapper   │ │    │ │Mapper   │ │    its own user mapping     │
+│  │ └─────────┘ │    │ └─────────┘ │                             │
+│  └──────┬──────┘    └──────┬──────┘                             │
+│         │                  │                                    │
+│         ▼                  ▼                                    │
+│  ┌─────────────────────────────────────┐                       │
+│  │         Metrics Aggregation         │                       │
+│  │     (by UserID + ToolName key)      │                       │
+│  └─────────────────┬───────────────────┘                       │
+│                    │                                            │
+│                    ▼                                            │
+│  ┌─────────────────────────────────────┐                       │
+│  │          User Filtering             │                       │
+│  │      (include/exclude users)        │                       │
+│  └─────────────────┬───────────────────┘                       │
+│                    │                                            │
+│                    ▼                                            │
+│           ┌─────────────────┐                                   │
+│           │ Aggregated      │                                   │
+│           │ Metrics         │                                   │
+│           └────────┬────────┘                                   │
+│                    │                                            │
+│      ┌─────────────┼─────────────┐                              │
+│      │             │             │                              │
+│      ▼             ▼             ▼                              │
+│ ┌─────────┐  ┌─────────┐  ┌─────────┐                           │
+│ │Publisher│  │Publisher│  │Publisher│  ... fan-out to all       │
+│ │(GetDX)  │  │(Custom) │  │(Prom)   │      publishers           │
+│ └─────────┘  └─────────┘  └─────────┘                           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+### Key Architectural Features:
+
+- **Multiple Collectors**: Each collector runs independently and can have different user ID mapping strategies
+- **Per-Collector User Mapping**: User IDs are transformed at collection time, allowing different mapping logic per data source
+- **Metrics Aggregation**: All collected metrics are aggregated by `(UserID, ToolName)` key before publishing
+- **User Filtering**: A single user filter applies to all metrics, allowing inclusion/exclusion of specific users
+- **Fan-out Publishing**: All aggregated metrics are sent to every configured publisher in parallel
 
 ## Project Structure
 
@@ -141,29 +172,32 @@ See [terraform/README.md](terraform/README.md) for detailed infrastructure docum
 
 2. Edit `config.yaml` with your settings:
    ```yaml
-   collectors:
-     - name: bedrock-s3
-       type: bedrock
-       enabled: true
-       config:
-         bucket: my-bedrock-logs-bucket
-         prefix: bedrock-logs/
+   pipelines:
+     - collectors:
+         - name: bedrock-s3
+           type: bedrock
+           enabled: true
+           config:
+             bucket: my-bedrock-logs-bucket
+             prefix: bedrock-logs/
+           user_mapping:
+             type: passthrough  # or: static, regex
+             config: {}
 
-   publishers:
-     - name: getdx
-       type: getdx
-       enabled: true
-       config:
-         api_url: https://api.getdx.com/v1/metrics
-         api_key: ${GETDX_API_KEY}
+       publishers:
+         - name: getdx
+           type: getdx
+           enabled: true
+           config:
+             api_url: https://api.getdx.com/v1/metrics
+             api_key: ${GETDX_API_KEY}
 
-   mapper:
-     type: passthrough  # or: static, api
-     config: {}
-
-   schedule:
-     interval: 1h
-     run_once: false
+       users:
+         type: static
+         config:
+           user_ids:
+             - user@example.com
+             - admin@example.com
    ```
 
 ### Running
@@ -183,19 +217,36 @@ Run once for a specific time range:
 
 ## Configuration Reference
 
+The configuration follows a pipeline-based schema where you can define multiple independent pipelines:
+
+```yaml
+pipelines:
+  - # Pipeline 1
+    collectors: [...]
+    publishers: [...]
+    users: {...}
+  - # Pipeline 2 (optional)
+    collectors: [...]
+    publishers: [...]
+    users: {...}
+```
+
 ### Collectors
 
 #### Bedrock Collector
 Collects metrics from AWS Bedrock model invocation logs stored in S3.
 
 ```yaml
-collectors:
-  - name: bedrock-s3
-    type: bedrock
-    enabled: true
-    config:
-      bucket: string        # S3 bucket name
-      prefix: string        # S3 key prefix (optional)
+- name: bedrock-s3
+  type: bedrock
+  enabled: true
+  config:
+    bucket: string          # S3 bucket name
+    prefix: string          # S3 key prefix (optional)
+    local_path: string      # Local temp directory (optional)
+  user_mapping:             # Per-collector user ID mapping
+    type: passthrough       # or: static, regex
+    config: {}
 ```
 
 ### Publishers
@@ -204,22 +255,23 @@ collectors:
 Publishes metrics to the GetDX platform.
 
 ```yaml
-publishers:
-  - name: getdx
-    type: getdx
-    enabled: true
-    config:
-      api_url: string       # GetDX API endpoint
-      api_key: string       # API key (supports env vars)
+- name: getdx
+  type: getdx
+  enabled: true
+  config:
+    api_url: string         # GetDX API endpoint
+    api_key: string         # API key (supports env vars)
 ```
 
 ### User ID Mappers
+
+User ID mapping is configured per-collector, allowing different mapping strategies for different data sources.
 
 #### Passthrough Mapper
 Returns user IDs unchanged.
 
 ```yaml
-mapper:
+user_mapping:
   type: passthrough
   config: {}
 ```
@@ -228,32 +280,43 @@ mapper:
 Maps user IDs using a predefined map.
 
 ```yaml
-mapper:
+user_mapping:
   type: static
   config:
-    mappings:
-      session-123: user@example.com
-      session-456: another@example.com
+    session-123: user@example.com
+    session-456: another@example.com
 ```
 
-#### API Mapper
-Fetches user mappings from an external API (not yet implemented).
+#### Regex Mapper
+Transforms user IDs using regular expressions.
 
 ```yaml
-mapper:
-  type: api
+user_mapping:
+  type: regex
   config:
-    api_url: string
-    api_key: string
+    regex: 'session-(.+)'
+    replacement: 'user-$1@example.com'
 ```
 
-### Schedule
+### User Filtering
+
+Controls which users are included in the metrics collection:
 
 ```yaml
-schedule:
-  interval: duration      # e.g., 1h, 30m, 24h
-  run_once: bool         # If true, run once and exit
+users:
+  type: static
+  config:
+    user_ids:
+      - user@example.com
+      - admin@example.com
+      - service-account-123
 ```
+
+### Time Range
+
+Time ranges are specified via command-line flags rather than configuration:
+- `-start`: Start time in RFC3339 format (default: 24 hours ago)
+- `-end`: End time in RFC3339 format (default: now)
 
 ## Development
 
@@ -287,11 +350,10 @@ schedule:
 
 ### Adding a New Mapper
 
-1. Implement the `types.UserIDMapper` interface:
+1. Implement the `mapper.UserIDMapper` interface:
    ```go
    type UserIDMapper interface {
        Map(ctx context.Context, userID string) (string, error)
-       BatchMap(ctx context.Context, userIDs []string) (map[string]string, error)
    }
    ```
 
