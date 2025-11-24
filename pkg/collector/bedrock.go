@@ -210,7 +210,6 @@ func (c *BedrockCollector) collectFromLocalPath(ctx context.Context, from, to ti
 }
 
 func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time, prefix string) (map[string]AggregatedMetric, error) {
-	panic(nil)
 	// List objects in the S3 bucket with the given prefix
 	paginator := s3.NewListObjectsV2Paginator(c.s3Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(c.bucketName),
