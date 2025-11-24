@@ -17,7 +17,7 @@ go.work
 # Build output
 /bin/
 /dist/
-ai-reporter
+./ai-reporter
 
 # Configuration files with secrets
 config.yaml
