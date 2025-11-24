@@ -7,8 +7,11 @@ import (
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/mapper"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type ToolUsage struct {
@@ -47,7 +50,32 @@ func NewCollector(cfg CollectorConfig, userList users.UsersList) (Collector, err
 		if err != nil {
 			return nil, fmt.Errorf("failed to load AWS config: %w", err)
 		}
+
+		chainIntf := cfg.Config["assune_role_chain"]
+		if chainIntf != nil {
+			chain := chainIntf.([]any)
+			for _, role := range chain {
+				roleMap := role.(map[string]any)
+				roleArn := roleMap["arn"].(string)
+
+				stsClient := sts.NewFromConfig(awsCfg)
+
+				creds := stscreds.NewAssumeRoleProvider(stsClient, roleArn, func(p *stscreds.AssumeRoleOptions) {
+					if externalId, ok := roleMap["external_id"].(string); ok {
+						p.ExternalID = aws.String(externalId)
+					}
+					if sessionName, ok := roleMap["session_name"].(string); ok {
+						p.RoleSessionName = sessionName
+					}
+				})
+
+				awsCfg.Credentials = aws.NewCredentialsCache(creds)
+			}
+
+		}
+
 		s3Client := s3.NewFromConfig(awsCfg)
+
 		bucketName, ok := cfg.Config["bucket"].(string)
 		if !ok {
 			return nil, fmt.Errorf("bucket is not a string")
