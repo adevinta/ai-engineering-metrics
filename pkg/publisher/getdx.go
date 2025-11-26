@@ -55,6 +55,10 @@ func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPubl
 	}, nil
 }
 
+type GetDXMetrics struct {
+	Data []GetDXMetric `json:"data"`
+}
+
 // GetDXMetric represents a metric in GetDX format
 type GetDXMetric struct {
 	Email    string         `json:"email"`
@@ -77,31 +81,29 @@ func (p *GetDXPublisher) Name() string {
 // Publish sends metrics to GetDX
 func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metrics map[collector.ToolUsage]collector.Metric) error {
 
+	dxMetrics := make([]GetDXMetric, 0)
 
 	for key, metric := range metrics {
-		if err := p.publishMetric(ctx, newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics)); err != nil {
-			return fmt.Errorf("failed to publish unused metric: %w", err)
-		}
+		dxMetrics = append(dxMetrics, newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics))
 	}
 
 	for tool := range p.tools {
 		for _, userID := range p.userList.List() {
 			if _, ok := metrics[collector.ToolUsage{UserID: userID, ToolName: tool}]; !ok {
-				if err := p.publishMetric(ctx, newUnusedMetric(formatDate(start), userID, tool)); err != nil {
-					return fmt.Errorf("failed to publish unused metric: %w", err)
-				}
+				dxMetrics = append(dxMetrics, newUnusedMetric(formatDate(start), userID, tool))
 			}
 		}
 	}
-	return nil
+	// todo: paginate to limit request size
+	return p.publishMetrics(ctx, GetDXMetrics{Data: dxMetrics})
 }
 
-func (p *GetDXPublisher) publishMetric(ctx context.Context, metric GetDXMetric) error {
-	data, err := json.Marshal(metric)
+func (p *GetDXPublisher) publishMetrics(ctx context.Context, metrics GetDXMetrics) error {
+	data, err := json.Marshal(metrics)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metric: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/aiToolMetrics.push", strings.TrimSuffix(p.apiURL, "/")), bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/aiToolMetrics.pushAll", strings.TrimSuffix(p.apiURL, "/")), bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
