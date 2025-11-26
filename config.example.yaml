@@ -31,6 +31,8 @@ pipelines:
         config:
           api_url: https://api.getdx.com/v1/metrics
           api_key: ${GETDX_API_KEY}
+          tools:
+          - claude
 
     # User filtering configuration
     users:

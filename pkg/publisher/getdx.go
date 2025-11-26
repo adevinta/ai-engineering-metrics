@@ -20,6 +20,7 @@ type GetDXPublisher struct {
 	httpClient *http.Client
 	name       string
 	userList   users.UsersList
+	tools      map[string]struct{}
 }
 
 func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPublisher, error) {
@@ -31,6 +32,18 @@ func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPubl
 	if !ok {
 		return nil, fmt.Errorf("api_base_url is not a string")
 	}
+	tools, ok := cfg["tools"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("tools is missing or not a list")
+	}
+	toolsMap := make(map[string]struct{})
+	for _, tool := range tools {
+		toolString, ok := tool.(string)
+		if !ok {
+			return nil, fmt.Errorf("tool is not a string")
+		}
+		toolsMap[toolString] = struct{}{}
+	}
 	return &GetDXPublisher{
 		apiKey: apiKey,
 		apiURL: apiURL,
@@ -38,6 +51,7 @@ func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPubl
 			Timeout: 30 * time.Second,
 		},
 		userList: userList,
+		tools:    toolsMap,
 	}, nil
 }
 
@@ -62,20 +76,15 @@ func (p *GetDXPublisher) Name() string {
 
 // Publish sends metrics to GetDX
 func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metrics map[collector.ToolUsage]collector.Metric) error {
-	if len(metrics) == 0 {
-		return nil
-	}
 
-	tools := map[string]struct{}{}
 
 	for key, metric := range metrics {
-		tools[metric.ToolName] = struct{}{}
 		if err := p.publishMetric(ctx, newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics)); err != nil {
 			return fmt.Errorf("failed to publish unused metric: %w", err)
 		}
 	}
 
-	for tool := range tools {
+	for tool := range p.tools {
 		for _, userID := range p.userList.List() {
 			if _, ok := metrics[collector.ToolUsage{UserID: userID, ToolName: tool}]; !ok {
 				if err := p.publishMetric(ctx, newUnusedMetric(formatDate(start), userID, tool)); err != nil {
