@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -104,6 +105,106 @@ func (c *WebAPIClient) GetTeamInfo(teamID string) (TeamInfo, error) {
 		return TeamInfo{}, err
 	}
 	return resp.Team, nil
+}
+
+type Event struct {
+	Name           string         `json:"name"`
+	Timestamp      string         `json:"timestamp"`
+	Email          string         `json:"email,omitempty"`
+	GitHubUserName string         `json:"github_username,omitempty"`
+	GitLabUserName string         `json:"gitlab_username,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+}
+
+type event struct {
+	payload Event
+	values  url.Values
+}
+
+type EventArg func(event *event)
+
+func WithEventEmail(email string) EventArg {
+	return func(event *event) {
+		event.payload.Email = email
+	}
+}
+
+func WithEventGitHubUserName(githubUserName string) EventArg {
+	return func(event *event) {
+		event.payload.GitHubUserName = githubUserName
+	}
+}
+
+func WithEventGitLabUserName(gitlabUserName string) EventArg {
+	return func(event *event) {
+		event.payload.GitLabUserName = gitlabUserName
+	}
+}
+
+func WithEventName(name string) EventArg {
+	return func(event *event) {
+		event.payload.Name = name
+	}
+}
+
+func WithEventTimestamp(t time.Time) EventArg {
+	return func(event *event) {
+		event.payload.Timestamp = strconv.Itoa(int(t.Unix()))
+	}
+}
+
+func WithEventMetadata(metadata map[string]any) EventArg {
+	return func(event *event) {
+		event.payload.Metadata = metadata
+	}
+}
+
+func WithEventTestData(testData bool) EventArg {
+	return func(event *event) {
+		event.values.Set("test_data", strconv.FormatBool(testData))
+	}
+}
+
+func (c *WebAPIClient) TrackEvent(args ...EventArg) (*EventResponse, error) {
+	evt := event{
+		payload: Event{
+			Timestamp: strconv.Itoa(int(time.Now().Unix())),
+		},
+		values: url.Values{},
+	}
+	for _, arg := range args {
+		arg(&evt)
+	}
+	if evt.payload.Email == "" && evt.payload.GitHubUserName == "" && evt.payload.GitLabUserName == "" {
+		return nil, fmt.Errorf("email or github_username or gitlab_username is required")
+	}
+	if evt.payload.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if evt.payload.Timestamp == "" {
+		return nil, fmt.Errorf("timestamp is required")
+	}
+	resp := EventResponse{}
+	if err := c.post(fmt.Sprintf("%s/events.track", c.apiURL), evt.values, evt.payload, &resp); err != nil {
+		return nil, err
+	}
+	if !resp.Success() {
+		return &resp, &resp
+	}
+	return &resp, nil
+}
+
+type EventResponse struct {
+	OK  bool   `json:"ok"`
+	Err string `json:"error"`
+}
+
+func (r *EventResponse) Success() bool {
+	return r.OK
+}
+
+func (r *EventResponse) Error() string {
+	return r.Err
 }
 
 type teamInfoResponse struct {

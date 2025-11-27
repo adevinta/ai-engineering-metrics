@@ -59,6 +59,7 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	if values != nil {
 		req.URL.RawQuery = values.Encode()
 	}
