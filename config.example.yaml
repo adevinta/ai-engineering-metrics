@@ -43,4 +43,8 @@ pipelines:
           - admin@example.com
           - service-account-123
           # Add more user IDs as needed
+      # Alternatively, use GetDX API to get the list of users
+      # type: getdx
+      # config:
+      #  api_key: ${GETDX_WEB_API_KEY}
 

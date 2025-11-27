@@ -16,6 +16,8 @@ func NewUserList(cfg UserList) (UsersList, error) {
 	switch cfg.Type {
 	case "static":
 		return NewStaticUserList(cfg.Config)
+	case "getdx":
+		return NewGetDXUsers(cfg.Config)
 	default:
 		return nil, fmt.Errorf("unknown filter type: %s", cfg.Type)
 	}
