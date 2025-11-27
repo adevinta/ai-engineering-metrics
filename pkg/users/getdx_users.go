@@ -40,16 +40,16 @@ func NewGetDXUsers(config map[string]any) (*DXUsers, error) {
 	if !ok {
 		return nil, fmt.Errorf("api_key is not a string")
 	}
-	opts := []dx.WebClientOption{dx.WithAPIKey(apiKey)}
+	opts := []dx.WebClientOption{dx.WithWebAPIKey(apiKey)}
 	anyApiURL, ok := config["api_url"]
 	if ok {
 		apiURL, ok := anyApiURL.(string)
 		if !ok {
 			return nil, fmt.Errorf("api_url is not a string")
 		}
-		opts = append(opts, dx.WithAPIURL(apiURL))
+		opts = append(opts, dx.WithWebAPIURL(apiURL))
 	}
-	client, err := dx.NewClient(opts...)
+	client, err := dx.NewWebAPIClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}

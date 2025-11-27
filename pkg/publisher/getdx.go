@@ -1,26 +1,21 @@
 package publisher
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/collector"
+	"github.com/adevinta/ai-engineering-metrics/pkg/dx"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 )
 
 // GetDXPublisher publishes metrics to the GetDX platform
 type GetDXPublisher struct {
-	apiKey     string
-	apiURL     string
-	httpClient *http.Client
-	name       string
-	userList   users.UsersList
-	tools      map[string]struct{}
+	*dx.DatacloudAPIClient
+	name     string
+	userList users.UsersList
+	tools    map[string]struct{}
 }
 
 func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPublisher, error) {
@@ -44,33 +39,15 @@ func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPubl
 		}
 		toolsMap[toolString] = struct{}{}
 	}
+	dxClient, err := dx.NewDatacloudAPIClient(dx.WithDatacloudAPIKey(apiKey), dx.WithDatacloudAPIURL(apiURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DX client: %w", err)
+	}
 	return &GetDXPublisher{
-		apiKey: apiKey,
-		apiURL: apiURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		userList: userList,
-		tools:    toolsMap,
+		DatacloudAPIClient: dxClient,
+		userList:           userList,
+		tools:              toolsMap,
 	}, nil
-}
-
-type GetDXMetrics struct {
-	Data []GetDXMetric `json:"data"`
-}
-
-// GetDXMetric represents a metric in GetDX format
-type GetDXMetric struct {
-	Email    string         `json:"email"`
-	Date     string         `json:"date"`
-	IsActive bool           `json:"is_active"`
-	Tool     string         `json:"tool"`
-	Metrics  map[string]any `json:"metrics"`
-}
-
-// GetDXBatchRequest represents a batch of metrics to send to GetDX
-type GetDXBatchRequest struct {
-	Metrics []GetDXMetric `json:"metrics"`
 }
 
 // Name returns the publisher's name
@@ -80,8 +57,7 @@ func (p *GetDXPublisher) Name() string {
 
 // Publish sends metrics to GetDX
 func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metrics map[collector.ToolUsage]collector.Metric) error {
-
-	dxMetrics := make([]GetDXMetric, 0)
+	dxMetrics := make([]dx.DXAIMetric, 0)
 
 	for key, metric := range metrics {
 		dxMetrics = append(dxMetrics, newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics))
@@ -95,33 +71,15 @@ func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metr
 		}
 	}
 	// todo: paginate to limit request size
-	return p.publishMetrics(ctx, GetDXMetrics{Data: dxMetrics})
-}
-
-func (p *GetDXPublisher) publishMetrics(ctx context.Context, metrics GetDXMetrics) error {
-	data, err := json.Marshal(metrics)
+	_, err := p.PushAIMetrics(ctx, dx.DXAIMetrics{Data: dxMetrics})
 	if err != nil {
-		return fmt.Errorf("failed to marshal metric: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/aiToolMetrics.pushAll", strings.TrimSuffix(p.apiURL, "/")), bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.apiKey))
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("failed to push metrics: %w", err)
 	}
 	return nil
 }
 
-func newUsedMetric(date, userID, toolName string, metrics map[string]any) GetDXMetric {
-	return GetDXMetric{
+func newUsedMetric(date, userID, toolName string, metrics map[string]any) dx.DXAIMetric {
+	return dx.DXAIMetric{
 		Email:    userID,
 		Date:     date,
 		IsActive: true,
@@ -130,8 +88,8 @@ func newUsedMetric(date, userID, toolName string, metrics map[string]any) GetDXM
 	}
 }
 
-func newUnusedMetric(date, userID, toolName string) GetDXMetric {
-	return GetDXMetric{
+func newUnusedMetric(date, userID, toolName string) dx.DXAIMetric {
+	return dx.DXAIMetric{
 		Email:    userID,
 		Date:     date,
 		IsActive: false,
