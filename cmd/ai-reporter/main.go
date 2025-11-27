@@ -49,9 +49,9 @@ func run() error {
 		}
 	} else {
 		if *utc {
-			start = start.UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
+			start = time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
 		} else {
-			start = start.Truncate(24 * time.Hour).Add(-24 * time.Hour)
+			start = time.Now().Truncate(24 * time.Hour).Add(-24 * time.Hour)
 		}
 	}
 
@@ -66,12 +66,11 @@ func run() error {
 		}
 	} else {
 		if *utc {
-			end = end.UTC().Truncate(24 * time.Hour).Add(-time.Microsecond)
+			end = time.Now().UTC().Truncate(24 * time.Hour).Add(-time.Microsecond)
 		} else {
-			end = end.Truncate(24 * time.Hour).Add(-time.Microsecond)
+			end = time.Now().Truncate(24 * time.Hour).Add(-time.Microsecond)
 		}
 	}
-
 	// Run collection and publishing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
