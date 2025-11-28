@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	configPath = flag.String("config", "config.yaml", "Path to configuration file")
+	configPath = flag.String("config", "collector.yaml", "Path to configuration file")
 	startTime  = flag.String("start", "", "Start time for metric collection (RFC3339 format). If not provided, it will be set to the start of previous day")
 	utc        = flag.Bool("utc", true, "Use UTC timezone for the time range. If false, the local timezone will be used.")
 	endTime    = flag.String("end", "", "End time for metric collection (RFC3339 format). If not provided, it will be set to the end of the previous day")
@@ -71,6 +71,7 @@ func run() error {
 			end = time.Now().Truncate(24 * time.Hour).Add(-time.Microsecond)
 		}
 	}
+
 	// Run collection and publishing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
