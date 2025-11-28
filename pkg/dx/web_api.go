@@ -161,7 +161,11 @@ func WithEventMetadata(metadata map[string]any) EventArg {
 
 func WithEventTestData(testData bool) EventArg {
 	return func(event *event) {
-		event.values.Set("test_data", strconv.FormatBool(testData))
+		if testData {
+			event.values.Set("test_data", "true")
+		} else {
+			event.values.Del("test_data")
+		}
 	}
 }
 

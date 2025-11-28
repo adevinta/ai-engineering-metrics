@@ -20,7 +20,8 @@ go.work
 ./ai-reporter
 
 # Configuration files with secrets
-config.yaml
+collector.yaml
+webhook.yaml
 *.local.yaml
 
 # IDE

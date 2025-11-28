@@ -1,0 +1,19 @@
+github:
+  webhook_secret: ${env.GITHUB_WEBHOOK_SECRET}
+  if: ${headers["X-GitHub-Event"][0] == "pull_request" || headers["X-GitHub-Event"][0] == "pull_request_review"}
+  pass_thru:
+  - if: ${method == "POST"}
+    url: https://${env.NAMESPACE}.getdx.net/webhooks/github
+    method: ${method}
+  dx:
+    track_event:
+    - api_key: ${env.GETDX_API_KEY}
+      if: ${body.action == "opened"}
+      event_name: github.pull_request.${body.action}
+      user_name: ${body.sender.login}
+      is_test: ${body.action == "opened"}
+      event_metadata:
+        repository: ${body.repository.name}
+        pull_request: ${body.pull_request.number}
+        pull_request_url: ${body.pull_request.html_url}
+        pull_request_title: ${body.pull_request.title}
