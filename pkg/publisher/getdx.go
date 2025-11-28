@@ -7,6 +7,7 @@ import (
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/collector"
 	"github.com/adevinta/ai-engineering-metrics/pkg/dx"
+	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 )
 
@@ -22,6 +23,10 @@ func NewGetDXPublisher(cfg map[string]any, userList users.UsersList) (*GetDXPubl
 	apiKey, ok := cfg["api_token"].(string)
 	if !ok {
 		return nil, fmt.Errorf("api_token is not a string")
+	}
+	apiKey, err := lcel.ExpandEnv(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand api key: %w", err)
 	}
 	apiURL, ok := cfg["api_base_url"].(string)
 	if !ok {

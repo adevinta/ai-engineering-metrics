@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/dx"
+	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
 )
 
 type DXUsers struct {
@@ -40,6 +41,11 @@ func NewGetDXUsers(config map[string]any) (*DXUsers, error) {
 	if !ok {
 		return nil, fmt.Errorf("api_key is not a string")
 	}
+	apiKey, err := lcel.ExpandEnv(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand api key: %w", err)
+	}
+
 	opts := []dx.WebClientOption{dx.WithWebAPIKey(apiKey)}
 	anyApiURL, ok := config["api_url"]
 	if ok {
