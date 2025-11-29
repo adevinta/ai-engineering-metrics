@@ -1,0 +1,42 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: ai-metrics-base
+
+resources:
+  - service_account.yaml
+  - cronjob.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: ai-webhook
+      app.kubernetes.io/instance: ai-webhook
+    includeTemplates: true
+    includeSelectors: true
+  - pairs:
+      app.kubernetes.io/version: latest
+    includeTemplates: true
+    includeSelectors: false
+
+configMapGenerator:
+- name: ai-metrics
+  literals:
+  - collector.yaml=""
+  - webhook.yaml=""
+
+secretGenerator:
+- name: ai-webhook
+- name: ai-collector
+
+images:
+  - name: collector
+    newName: ghcr.io/adevinta/ai-metrics/collector
+    newTag: latest
+  - name: webhook
+    newName: ghcr.io/adevinta/ai-metrics/webhook
+    newTag: latest

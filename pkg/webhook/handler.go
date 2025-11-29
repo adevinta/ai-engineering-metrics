@@ -101,6 +101,17 @@ func (h *Handler) getPayload(r *http.Request) ([]byte, error) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handle health check endpoints
+	switch r.URL.Path {
+	case "/health":
+		h.handleLiveness(w, r)
+		return
+	case "/ready":
+		h.handleReadiness(w, r)
+		return
+	}
+
+	// Handle webhook requests
 	body, err := h.getPayload(r)
 	if err != nil {
 		fmt.Printf("error getting payload: %v\n", err)
@@ -286,4 +297,30 @@ func shouldInclude(ctx context.Context, resolver *lcel.ResolvedValue[bool], ghCt
 		return false, err
 	}
 	return include, nil
+}
+
+// handleLiveness handles the liveness probe endpoint
+func (h *Handler) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "alive", "timestamp": "` + time.Now().UTC().Format(time.RFC3339) + `"}`))
+}
+
+// handleReadiness handles the readiness probe endpoint
+func (h *Handler) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Basic readiness check - we could add more sophisticated checks here
+	// such as checking external dependencies (DX API, database connections, etc.)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "ready", "timestamp": "` + time.Now().UTC().Format(time.RFC3339) + `"}`))
 }

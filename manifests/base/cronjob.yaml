@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-collector
+  labels:
+    app.kubernetes.io/component: collector
+spec:
+  schedule: "0 4 * * *"  # Run daily at 4 AM UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid  # Don't run concurrent jobs
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: collector
+        spec:
+          serviceAccountName: ai-collector
+          restartPolicy: OnFailure
+          containers:
+          - name: collector
+            image: collector:latest
+            imagePullPolicy: IfNotPresent
+            args:
+              - "-config"
+              - "/etc/config/config.yaml"
+            envFrom:
+            - secretRef:
+                name: ai-collector
+            env:
+            - name: TZ
+              value: "UTC"
+            volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          volumes:
+          - name: config
+            configMap:
+              name: ai-metrics

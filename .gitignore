@@ -17,11 +17,12 @@ go.work
 # Build output
 /bin/
 /dist/
-./ai-reporter
+./reporter
 
 # Configuration files with secrets
-collector.yaml
-webhook.yaml
+./collector.yaml
+./webhook.yaml
+*_secrets.env
 *.local.yaml
 
 # IDE
