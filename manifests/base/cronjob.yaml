@@ -25,13 +25,15 @@ spec:
             imagePullPolicy: IfNotPresent
             args:
               - "-config"
-              - "/etc/config/config.yaml"
+              - "/etc/config/collector.yaml"
             envFrom:
             - secretRef:
                 name: ai-collector
             env:
             - name: TZ
               value: "UTC"
+            - name: AWS_REGION
+              value: "eu-west-1"
             volumeMounts:
             - name: config
               mountPath: /etc/config

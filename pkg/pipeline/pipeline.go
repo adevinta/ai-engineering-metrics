@@ -113,11 +113,13 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 
 	// Collect metrics from all collectors
 	allMetrics := make(map[collector.ToolUsage]collector.Metric)
+	errors := make([]error, 0)
 	for _, c := range p.Collectors {
 		log.Printf("Collecting from %s...", c.Name())
 		metrics, err := c.Collect(ctx, start, end)
 		if err != nil {
 			log.Printf("Error collecting from %s: %v", c.Name(), err)
+			errors = append(errors, err)
 			continue
 		}
 		log.Printf("Collected %d metrics from %s", len(metrics), c.Name())
@@ -137,9 +139,13 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 		log.Printf("Publishing to %s...", p.Name())
 		if err := p.Publish(ctx, start, end, allMetrics); err != nil {
 			log.Printf("Error publishing to %s: %v", p.Name(), err)
+			errors = append(errors, err)
 			continue
 		}
 		log.Printf("Successfully published %d metrics to %s", len(allMetrics), p.Name())
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to collect metrics from some collectors: %v", errors)
 	}
 
 	return nil
