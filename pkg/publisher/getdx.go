@@ -8,7 +8,9 @@ import (
 	"github.com/adevinta/ai-engineering-metrics/pkg/collector"
 	"github.com/adevinta/ai-engineering-metrics/pkg/dx"
 	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
+	"github.com/sirupsen/logrus"
 )
 
 // GetDXPublisher publishes metrics to the GetDX platform
@@ -62,24 +64,73 @@ func (p *GetDXPublisher) Name() string {
 
 // Publish sends metrics to GetDX
 func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metrics map[collector.ToolUsage]collector.Metric) error {
-	dxMetrics := make([]dx.DXAIMetric, 0)
+	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
+		"component": "getdx_publisher",
+		"publisher": "getdx",
+	})
+	logger := logging.LoggerFromCtx(ctx)
 
+	logger.WithFields(logrus.Fields{
+		"start_date": formatDate(start),
+		"end_date": formatDate(end),
+		"input_metrics": len(metrics),
+		"configured_tools": len(p.tools),
+	}).Info("starting dx metric publishing")
+
+	dxMetrics := make([]dx.DXAIMetric, 0)
+	usedMetricsCount := 0
+
+	// Create used metrics for active users
 	for key, metric := range metrics {
-		dxMetrics = append(dxMetrics, newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics))
+		dxMetric := newUsedMetric(formatDate(start), key.UserID, key.ToolName, metric.Metrics)
+		dxMetrics = append(dxMetrics, dxMetric)
+		usedMetricsCount++
+
+		logger.WithFields(logrus.Fields{
+			"user_id": key.UserID,
+			"tool_name": key.ToolName,
+			"metrics": metric.Metrics,
+		}).Debug("created used metric")
 	}
 
+	unusedMetricsCount := 0
+	// Create unused metrics for inactive users
 	for tool := range p.tools {
 		for _, userID := range p.userList.List() {
 			if _, ok := metrics[collector.ToolUsage{UserID: userID, ToolName: tool}]; !ok {
-				dxMetrics = append(dxMetrics, newUnusedMetric(formatDate(start), userID, tool))
+				dxMetric := newUnusedMetric(formatDate(start), userID, tool)
+				dxMetrics = append(dxMetrics, dxMetric)
+				unusedMetricsCount++
+
+				logger.WithFields(logrus.Fields{
+					"user_id": userID,
+					"tool_name": tool,
+				}).Debug("created unused metric")
 			}
 		}
 	}
-	// todo: paginate to limit request size
-	_, err := p.PushAIMetrics(ctx, dx.DXAIMetrics{Data: dxMetrics})
+
+	logger.WithFields(logrus.Fields{
+		"total_dx_metrics": len(dxMetrics),
+		"used_metrics": usedMetricsCount,
+		"unused_metrics": unusedMetricsCount,
+	}).Info("pushing metrics to dx")
+
+	// TODO: paginate to limit request size
+	publishStart := time.Now()
+	resp, err := p.PushAIMetrics(ctx, dx.DXAIMetrics{Data: dxMetrics})
+	duration := time.Since(publishStart)
+
 	if err != nil {
+		logger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("failed to push metrics to dx")
 		return fmt.Errorf("failed to push metrics: %w", err)
 	}
+
+	logger.WithFields(logrus.Fields{
+		"duration_ms": duration.Milliseconds(),
+		"response_data_count": len(resp.Data),
+	}).Info("successfully pushed metrics to dx")
+
 	return nil
 }
 

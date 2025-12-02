@@ -4,13 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 	"github.com/adevinta/ai-engineering-metrics/pkg/pipeline"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,17 +25,31 @@ var (
 func main() {
 	flag.Parse()
 
+	// Initialize structured logging
+	logging.InitLogger()
+
 	if err := run(); err != nil {
-		log.Fatalf("Error: %v", err)
+		logrus.Fatalf("Error: %v", err)
 	}
 }
 
 func run() error {
+	ctx := logging.WithLoggingFields(context.Background(), logrus.Fields{
+		"component": "collector_main",
+		"config_path": *configPath,
+	})
+	logger := logging.LoggerFromCtx(ctx)
+
+	logger.Info("starting ai metrics collector")
+
 	// Load configuration
 	pipelines, err := pipeline.LoadPipelines(*configPath)
 	if err != nil {
+		logger.WithError(err).Error("failed to load config")
 		return fmt.Errorf("failed to load config: %w", err)
 	}
+
+	logger.WithField("pipeline_count", len(pipelines)).Info("loaded pipelines")
 
 	// Parse time range
 	var start, end time.Time
@@ -45,6 +60,7 @@ func run() error {
 			start, err = time.Parse(time.RFC3339, *startTime)
 		}
 		if err != nil {
+			logger.WithError(err).WithField("start_time", *startTime).Error("invalid start time")
 			return fmt.Errorf("invalid start time: %w", err)
 		}
 	} else {
@@ -53,6 +69,7 @@ func run() error {
 		} else {
 			start = time.Now().Truncate(24 * time.Hour).Add(-24 * time.Hour)
 		}
+		logger.WithField("start_time", start).Info("using default start time (previous day)")
 	}
 
 	if *endTime != "" {
@@ -62,6 +79,7 @@ func run() error {
 			end, err = time.Parse(time.RFC3339, *endTime)
 		}
 		if err != nil {
+			logger.WithError(err).WithField("end_time", *endTime).Error("invalid end time")
 			return fmt.Errorf("invalid end time: %w", err)
 		}
 	} else {
@@ -70,10 +88,17 @@ func run() error {
 		} else {
 			end = time.Now().Truncate(24 * time.Hour).Add(-time.Microsecond)
 		}
+		logger.WithField("end_time", end).Info("using default end time (end of previous day)")
 	}
 
+	logger.WithFields(logrus.Fields{
+		"start_time": start.Format(time.RFC3339),
+		"end_time": end.Format(time.RFC3339),
+		"utc": *utc,
+	}).Info("time range configured")
+
 	// Run collection and publishing
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Handle shutdown gracefully
@@ -82,20 +107,25 @@ func run() error {
 
 	go func() {
 		<-sigCh
-		log.Println("Shutting down...")
+		logger.Info("shutting down gracefully...")
 		cancel()
 	}()
 
+	logger.Info("starting pipeline execution")
 	errGroup := errgroup.Group{}
-	for _, pipeline := range pipelines {
+	for i, pipeline := range pipelines {
 		errGroup.Go(func() error {
-			return pipeline.Run(ctx, start, end)
+			return pipeline.Run(logging.WithLoggingFields(ctx, logrus.Fields{
+				"pipeline_index": i,
+			}), start, end)
 		})
 	}
 
 	if err := errGroup.Wait(); err != nil {
+		logger.WithError(err).Error("failed to run pipelines")
 		return fmt.Errorf("failed to run pipelines: %w", err)
 	}
 
+	logger.Info("ai metrics collector completed successfully")
 	return nil
 }

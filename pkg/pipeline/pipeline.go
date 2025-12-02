@@ -3,13 +3,14 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/collector"
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 	"github.com/adevinta/ai-engineering-metrics/pkg/publisher"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert/yaml"
 )
 
@@ -83,46 +84,93 @@ func NewPipeline(cfg PipelineConfig) (Pipeline, error) {
 }
 
 func (p *Pipeline) Run(ctx context.Context, start, end time.Time) error {
+	// Add pipeline context for logging
+	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
+		"component": "pipeline",
+		"operation": "run",
+	})
+	logger := logging.LoggerFromCtx(ctx)
+
 	start = start.Truncate(24 * time.Hour)
 
 	if start.After(time.Now()) {
+		logger.WithField("start_time", start).Error("start time is in the future")
 		return fmt.Errorf("start time is in the future")
 	}
 
 	if end.Before(start) {
+		logger.WithFields(logrus.Fields{
+			"start_time": start,
+			"end_time": end,
+		}).Error("end time is before start time")
 		return fmt.Errorf("end time is before start time")
 	}
+
+	logger.WithFields(logrus.Fields{
+		"start_time": start,
+		"end_time": end,
+	}).Info("pipeline started")
 
 	for start.Before(end) {
 		e := start.Add(24*time.Hour - time.Microsecond)
 		if time.Now().Before(e) {
-			log.Printf("end time is in the future, skip reporting %s\n", start.Format("2006-01-02"))
+			logger.WithField("date", start.Format("2006-01-02")).Info("end time is in the future, skip reporting")
 			break
 		}
-		fmt.Println("start", start, "end", e)
+
+		dayLogger := logger.WithFields(logrus.Fields{
+			"day_start": start,
+			"day_end": e,
+		})
+		dayLogger.Info("processing day")
+
 		if err := p.runOnce(ctx, start, e); err != nil {
+			dayLogger.WithError(err).Error("failed to run pipeline for day")
 			return fmt.Errorf("failed to run pipeline: %w", err)
 		}
 		start = start.Add(24 * time.Hour)
 	}
+
+	logger.Info("pipeline completed successfully")
 	return nil
 }
 
 func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
-	log.Printf("Collecting metrics from %s to %s", start.Format(time.RFC3339), end.Format(time.RFC3339))
+	ctx = logging.WithLoggingField(ctx, "operation", "runOnce")
+	logger := logging.LoggerFromCtx(ctx)
+
+	logger.WithFields(logrus.Fields{
+		"start_time": start.Format(time.RFC3339),
+		"end_time": end.Format(time.RFC3339),
+	}).Info("collecting metrics")
 
 	// Collect metrics from all collectors
 	allMetrics := make(map[collector.ToolUsage]collector.Metric)
 	errors := make([]error, 0)
+
 	for _, c := range p.Collectors {
-		log.Printf("Collecting from %s...", c.Name())
+		collectorLogger := logger.WithFields(logrus.Fields{
+			"collector": c.Name(),
+		})
+
+		collectorLogger.Info("starting collection")
+		collectorStart := time.Now()
+
 		metrics, err := c.Collect(ctx, start, end)
+		duration := time.Since(collectorStart)
+
 		if err != nil {
-			log.Printf("Error collecting from %s: %v", c.Name(), err)
+			collectorLogger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("collection failed")
 			errors = append(errors, err)
 			continue
 		}
-		log.Printf("Collected %d metrics from %s", len(metrics), c.Name())
+
+		collectorLogger.WithFields(logrus.Fields{
+			"metric_count": len(metrics),
+			"duration_ms": duration.Milliseconds(),
+		}).Info("collection completed")
+
+		// Merge metrics
 		for key, metric := range metrics {
 			m, ok := allMetrics[key]
 			if !ok {
@@ -135,18 +183,32 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 		}
 	}
 
-	for _, p := range p.Publishers {
-		log.Printf("Publishing to %s...", p.Name())
-		if err := p.Publish(ctx, start, end, allMetrics); err != nil {
-			log.Printf("Error publishing to %s: %v", p.Name(), err)
+	// Publish metrics to all publishers
+	for _, pub := range p.Publishers {
+		publisherLogger := logger.WithFields(logrus.Fields{
+			"publisher": pub.Name(),
+			"metric_count": len(allMetrics),
+		})
+
+		publisherLogger.Info("starting publishing")
+		publishStart := time.Now()
+
+		if err := pub.Publish(ctx, start, end, allMetrics); err != nil {
+			duration := time.Since(publishStart)
+			publisherLogger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("publishing failed")
 			errors = append(errors, err)
 			continue
 		}
-		log.Printf("Successfully published %d metrics to %s", len(allMetrics), p.Name())
+
+		duration := time.Since(publishStart)
+		publisherLogger.WithField("duration_ms", duration.Milliseconds()).Info("publishing completed")
 	}
+
 	if len(errors) > 0 {
+		logger.WithField("error_count", len(errors)).Error("pipeline completed with errors")
 		return fmt.Errorf("failed to collect metrics from some collectors: %v", errors)
 	}
 
+	logger.Info("pipeline run completed successfully")
 	return nil
 }

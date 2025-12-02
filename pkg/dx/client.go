@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
+
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
+	"github.com/sirupsen/logrus"
 )
 
 type dxClientConfig interface {
@@ -55,6 +59,7 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 	if err != nil {
 		return err
 	}
+
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	if err != nil {
 		return err
@@ -63,17 +68,42 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 	if values != nil {
 		req.URL.RawQuery = values.Encode()
 	}
+
+	// Log the outgoing request
+	logger := logging.LoggerFromCtx(req.Context())
+	logger.WithFields(logrus.Fields{
+		"method": "POST",
+		"url": url,
+		"content_type": "application/json",
+		"payload_size": len(data),
+	}).Info("sending dx api request")
+
+	requestStart := time.Now()
 	resp, err := c.Do(req)
+	duration := time.Since(requestStart)
+
 	if err != nil {
+		logger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("dx api request failed")
 		return err
 	}
 	defer resp.Body.Close()
+
+	logger.WithFields(logrus.Fields{
+		"status_code": resp.StatusCode,
+		"duration_ms": duration.Milliseconds(),
+	}).Info("received dx api response")
+
 	if resp.StatusCode != http.StatusOK {
+		logger.WithField("status_code", resp.StatusCode).Error("dx api returned non-200 status")
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		logger.WithError(err).Error("failed to decode dx api response")
 		return err
 	}
+
+	logger.Debug("dx api response decoded successfully")
 	return nil
 }
 

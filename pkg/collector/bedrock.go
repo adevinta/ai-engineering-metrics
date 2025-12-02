@@ -12,10 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 	"github.com/adevinta/ai-engineering-metrics/pkg/mapper"
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/sirupsen/logrus"
 )
 
 type s3Client interface {
@@ -210,6 +212,8 @@ func (c *BedrockCollector) collectFromLocalPath(ctx context.Context, from, to ti
 }
 
 func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time, prefix string) (map[string]AggregatedMetric, error) {
+	logger := logging.LoggerFromCtx(ctx)
+
 	// List objects in the S3 bucket with the given prefix
 	paginator := s3.NewListObjectsV2Paginator(c.s3Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(c.bucketName),
@@ -217,38 +221,79 @@ func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time
 	})
 
 	aggregated := make(map[string]AggregatedMetric)
+	fileCount := 0
+
+	logger.Info("listing s3 objects")
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
+			logger.WithError(err).Error("failed to list S3 objects")
 			return nil, fmt.Errorf("failed to list S3 objects: %w", err)
 		}
 
+		logger.WithField("objects_in_page", len(page.Contents)).Debug("processing s3 page")
+
 		for _, obj := range page.Contents {
+			fileLogger := logger.WithFields(logrus.Fields{
+				"s3_key": *obj.Key,
+				"size": obj.Size,
+				"last_modified": obj.LastModified,
+			})
+
+			fileLogger.Debug("processing s3 object")
 
 			if err := c.aggregateFromS3(ctx, aggregated, from, to, *obj.Key); err != nil {
+				fileLogger.WithError(err).Error("failed to aggregate from S3 object")
 				return nil, fmt.Errorf("failed to aggregate from S3: %w", err)
 			}
+			fileCount++
 		}
 	}
+
+	logger.WithField("files_processed", fileCount).Info("s3 collection completed")
 	return aggregated, nil
 }
 
 // Collect retrieves metrics from S3 for the given time range
 func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map[ToolUsage]Metric, error) {
+	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
+		"component": "bedrock_collector",
+		"tool_name": c.toolName,
+		"bucket": c.bucketName,
+	})
+	logger := logging.LoggerFromCtx(ctx)
 
-	fmt.Printf("prefix: %s\n", c.getPrefix(from, to))
+	prefix := c.getPrefix(from, to)
+	logger.WithFields(logrus.Fields{
+		"from": from.Format(time.RFC3339),
+		"to": to.Format(time.RFC3339),
+		"prefix": prefix,
+		"local_path": c.localPath,
+	}).Info("starting bedrock log collection")
 
 	collectorFunc := c.collectFromS3
+	source := "s3"
 	if c.localPath != "" {
 		collectorFunc = c.collectFromLocalPath
+		source = "local_filesystem"
 	}
 
-	aggregated, err := collectorFunc(ctx, from, to, c.getPrefix(from, to))
+	logger.WithField("source", source).Info("collecting from data source")
+
+	aggregated, err := collectorFunc(ctx, from, to, prefix)
 	if err != nil {
+		logger.WithError(err).Error("failed to collect metrics")
 		return nil, fmt.Errorf("failed to collect metrics: %w", err)
 	}
-	return c.renderMetrics(from, to, aggregated), nil
+
+	metrics := c.renderMetrics(from, to, aggregated)
+	logger.WithFields(logrus.Fields{
+		"user_count": len(aggregated),
+		"metric_count": len(metrics),
+	}).Info("bedrock log collection completed")
+
+	return metrics, nil
 }
 
 func (c *BedrockCollector) renderMetrics(from, to time.Time, aggregated map[string]AggregatedMetric) map[ToolUsage]Metric {

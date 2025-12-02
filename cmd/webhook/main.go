@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"fmt"
-	"log"
 	"net/http"
 
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 	"github.com/adevinta/ai-engineering-metrics/pkg/webhook"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -16,18 +17,30 @@ func main() {
 	)
 	flag.Parse()
 
+	// Initialize structured logging
+	logging.InitLogger()
+	logger := logging.LoggerFromCtx(logging.WithLoggingFields(
+		context.Background(),
+		logrus.Fields{
+			"component":   "webhook_main",
+			"config_file": *configFile,
+			"port":        *port,
+		},
+	))
+
+	logger.Info("starting webhook server")
+
 	// Load webhook configuration
 	handler, err := webhook.NewHandler(webhook.FromConfigFile(*configFile))
 	if err != nil {
-		log.Fatalf("Failed to create webhook handler: %v", err)
+		logger.WithError(err).Fatal("failed to create webhook handler")
 	}
 
 	// Start HTTP server
 	addr := ":" + *port
-	fmt.Printf("Starting webhook server on %s\n", addr)
-	fmt.Printf("Using config file: %s\n", *configFile)
+	logger.WithField("address", addr).Info("webhook server starting")
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		logger.WithError(err).Fatal("webhook server failed")
 	}
 }
