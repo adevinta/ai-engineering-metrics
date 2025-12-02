@@ -14,7 +14,7 @@ spec:
       labels:
         app.kubernetes.io/component: webhook
     spec:
-      serviceAccountName: ai-reporter
+      serviceAccountName: ai-collector
       containers:
       - name: webhook
         image: webhook:latest
