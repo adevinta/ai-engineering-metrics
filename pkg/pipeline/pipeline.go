@@ -101,14 +101,14 @@ func (p *Pipeline) Run(ctx context.Context, start, end time.Time) error {
 	if end.Before(start) {
 		logger.WithFields(logrus.Fields{
 			"start_time": start,
-			"end_time": end,
+			"end_time":   end,
 		}).Error("end time is before start time")
 		return fmt.Errorf("end time is before start time")
 	}
 
 	logger.WithFields(logrus.Fields{
 		"start_time": start,
-		"end_time": end,
+		"end_time":   end,
 	}).Info("pipeline started")
 
 	for start.Before(end) {
@@ -120,7 +120,7 @@ func (p *Pipeline) Run(ctx context.Context, start, end time.Time) error {
 
 		dayLogger := logger.WithFields(logrus.Fields{
 			"day_start": start,
-			"day_end": e,
+			"day_end":   e,
 		})
 		dayLogger.Info("processing day")
 
@@ -141,7 +141,7 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 
 	logger.WithFields(logrus.Fields{
 		"start_time": start.Format(time.RFC3339),
-		"end_time": end.Format(time.RFC3339),
+		"end_time":   end.Format(time.RFC3339),
 	}).Info("collecting metrics")
 
 	// Collect metrics from all collectors
@@ -149,25 +149,23 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 	errors := make([]error, 0)
 
 	for _, c := range p.Collectors {
-		collectorLogger := logger.WithFields(logrus.Fields{
-			"collector": c.Name(),
-		})
-
-		collectorLogger.Info("starting collection")
+		ctx = logging.WithLoggingField(ctx, "collector", c.Name())
+		logger = logging.LoggerFromCtx(ctx)
+		logger.Info("starting collection")
 		collectorStart := time.Now()
 
 		metrics, err := c.Collect(ctx, start, end)
 		duration := time.Since(collectorStart)
 
 		if err != nil {
-			collectorLogger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("collection failed")
+			logger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("collection failed")
 			errors = append(errors, err)
 			continue
 		}
 
-		collectorLogger.WithFields(logrus.Fields{
+		logger.WithFields(logrus.Fields{
 			"metric_count": len(metrics),
-			"duration_ms": duration.Milliseconds(),
+			"duration_ms":  duration.Milliseconds(),
 		}).Info("collection completed")
 
 		// Merge metrics
@@ -185,23 +183,23 @@ func (p *Pipeline) runOnce(ctx context.Context, start, end time.Time) error {
 
 	// Publish metrics to all publishers
 	for _, pub := range p.Publishers {
-		publisherLogger := logger.WithFields(logrus.Fields{
-			"publisher": pub.Name(),
+		ctx = logging.WithLoggingFields(ctx, logrus.Fields{
+			"publisher":    pub.Name(),
 			"metric_count": len(allMetrics),
 		})
-
-		publisherLogger.Info("starting publishing")
+		logger = logging.LoggerFromCtx(ctx)
+		logger.Info("starting publishing")
 		publishStart := time.Now()
 
 		if err := pub.Publish(ctx, start, end, allMetrics); err != nil {
 			duration := time.Since(publishStart)
-			publisherLogger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("publishing failed")
+			logger.WithError(err).WithField("duration_ms", duration.Milliseconds()).Error("publishing failed")
 			errors = append(errors, err)
 			continue
 		}
 
 		duration := time.Since(publishStart)
-		publisherLogger.WithField("duration_ms", duration.Milliseconds()).Info("publishing completed")
+		logger.WithField("duration_ms", duration.Milliseconds()).Info("publishing completed")
 	}
 
 	if len(errors) > 0 {

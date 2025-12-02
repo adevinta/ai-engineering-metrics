@@ -235,16 +235,16 @@ func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time
 		logger.WithField("objects_in_page", len(page.Contents)).Debug("processing s3 page")
 
 		for _, obj := range page.Contents {
-			fileLogger := logger.WithFields(logrus.Fields{
-				"s3_key": *obj.Key,
-				"size": obj.Size,
+			ctx = logging.WithLoggingFields(ctx, logrus.Fields{
+				"s3_key":        *obj.Key,
+				"size":          obj.Size,
 				"last_modified": obj.LastModified,
 			})
-
-			fileLogger.Debug("processing s3 object")
+			logger = logging.LoggerFromCtx(ctx)
+			logger.Debug("processing s3 object")
 
 			if err := c.aggregateFromS3(ctx, aggregated, from, to, *obj.Key); err != nil {
-				fileLogger.WithError(err).Error("failed to aggregate from S3 object")
+				logger.WithError(err).Error("failed to aggregate from S3 object")
 				return nil, fmt.Errorf("failed to aggregate from S3: %w", err)
 			}
 			fileCount++
@@ -260,15 +260,15 @@ func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map
 	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
 		"component": "bedrock_collector",
 		"tool_name": c.toolName,
-		"bucket": c.bucketName,
+		"bucket":    c.bucketName,
 	})
 	logger := logging.LoggerFromCtx(ctx)
 
 	prefix := c.getPrefix(from, to)
 	logger.WithFields(logrus.Fields{
-		"from": from.Format(time.RFC3339),
-		"to": to.Format(time.RFC3339),
-		"prefix": prefix,
+		"from":       from.Format(time.RFC3339),
+		"to":         to.Format(time.RFC3339),
+		"prefix":     prefix,
 		"local_path": c.localPath,
 	}).Info("starting bedrock log collection")
 
@@ -289,7 +289,7 @@ func (c *BedrockCollector) Collect(ctx context.Context, from, to time.Time) (map
 
 	metrics := c.renderMetrics(from, to, aggregated)
 	logger.WithFields(logrus.Fields{
-		"user_count": len(aggregated),
+		"user_count":   len(aggregated),
 		"metric_count": len(metrics),
 	}).Info("bedrock log collection completed")
 

@@ -65,17 +65,16 @@ func (p *GetDXPublisher) Name() string {
 // Publish sends metrics to GetDX
 func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metrics map[collector.ToolUsage]collector.Metric) error {
 	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
-		"component": "getdx_publisher",
-		"publisher": "getdx",
+		"component":        "getdx_publisher",
+		"publisher":        "getdx",
+		"start_date":       formatDate(start),
+		"end_date":         formatDate(end),
+		"input_metrics":    len(metrics),
+		"configured_tools": len(p.tools),
 	})
 	logger := logging.LoggerFromCtx(ctx)
 
-	logger.WithFields(logrus.Fields{
-		"start_date": formatDate(start),
-		"end_date": formatDate(end),
-		"input_metrics": len(metrics),
-		"configured_tools": len(p.tools),
-	}).Info("starting dx metric publishing")
+	logger.Info("starting dx metric publishing")
 
 	dxMetrics := make([]dx.DXAIMetric, 0)
 	usedMetricsCount := 0
@@ -87,9 +86,9 @@ func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metr
 		usedMetricsCount++
 
 		logger.WithFields(logrus.Fields{
-			"user_id": key.UserID,
+			"user_id":   key.UserID,
 			"tool_name": key.ToolName,
-			"metrics": metric.Metrics,
+			"metrics":   metric.Metrics,
 		}).Debug("created used metric")
 	}
 
@@ -103,7 +102,7 @@ func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metr
 				unusedMetricsCount++
 
 				logger.WithFields(logrus.Fields{
-					"user_id": userID,
+					"user_id":   userID,
 					"tool_name": tool,
 				}).Debug("created unused metric")
 			}
@@ -112,8 +111,8 @@ func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metr
 
 	logger.WithFields(logrus.Fields{
 		"total_dx_metrics": len(dxMetrics),
-		"used_metrics": usedMetricsCount,
-		"unused_metrics": unusedMetricsCount,
+		"used_metrics":     usedMetricsCount,
+		"unused_metrics":   unusedMetricsCount,
 	}).Info("pushing metrics to dx")
 
 	// TODO: paginate to limit request size
@@ -127,7 +126,7 @@ func (p *GetDXPublisher) Publish(ctx context.Context, start, end time.Time, metr
 	}
 
 	logger.WithFields(logrus.Fields{
-		"duration_ms": duration.Milliseconds(),
+		"duration_ms":         duration.Milliseconds(),
 		"response_data_count": len(resp.Data),
 	}).Info("successfully pushed metrics to dx")
 
