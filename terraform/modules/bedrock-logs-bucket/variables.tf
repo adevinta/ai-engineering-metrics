@@ -8,6 +8,12 @@ variable "bucket_name" {
   }
 }
 
+variable "create_bucket" {
+  description = "Whether to create the S3 bucket"
+  type        = bool
+  default     = false
+}
+
 variable "force_destroy" {
   description = "Allow bucket to be destroyed even if it contains objects (use with caution)"
   type        = bool
@@ -70,33 +76,42 @@ variable "kms_key_id" {
   default     = null
 }
 
-variable "aws_account_id" {
-  description = "AWS account ID (null = use current account)"
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.aws_account_id == null || can(regex("^[0-9]{12}$", var.aws_account_id))
-    error_message = "AWS account ID must be exactly 12 digits."
-  }
-}
-
 variable "create_iam_role" {
   description = "Whether to create an IAM role for the AI reporter application"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "iam_role_name" {
   description = "Name of the IAM role for the AI reporter application"
   type        = string
-  default     = "ai-reporter-role"
+  default     = "ai-metrics-collector"
 }
 
-variable "assume_role_principals" {
-  description = "List of service principals that can assume the IAM role"
-  type        = list(string)
-  default     = ["ec2.amazonaws.com", "ecs-tasks.amazonaws.com"]
+variable "assume_role_statements" {
+  description = "List of statements that can assume the IAM role"
+  type        = list(object({
+    Effect = string
+    Action = list(string)
+    Principal = map(list(string))
+    Condition = optional(map(map(string)))
+  }))
+
+  default = [
+    {
+      Effect = "Allow"
+      Action = ["sts:AssumeRole", "sts:TagSession"]
+      Principal = {
+        Service = ["ec2.amazonaws.com", "pods.eks.amazonaws.com"]
+      }
+      # Condition = {
+      #   StringEquals = {
+      #     "aws:RequestTag/kubernetes-namespace": "Namespace"
+      #     "aws:RequestTag/kubernetes-service-account": "ServiceAccount"
+      #   }
+      # }
+    }
+  ]
 }
 
 variable "tags" {

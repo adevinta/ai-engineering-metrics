@@ -7,10 +7,11 @@ variable "aws_region" {
 variable "bucket_name" {
   description = "Name of the S3 bucket for Bedrock logs. Must be globally unique."
   type        = string
+  default     = "bedrock-logs"
 }
 
-variable "force_destroy" {
-  description = "Allow bucket to be destroyed even if it contains objects (use with caution)"
+variable "create_bucket" {
+  description = "Whether to create the S3 bucket"
   type        = bool
   default     = false
 }
@@ -51,28 +52,36 @@ variable "kms_key_id" {
   default     = null
 }
 
-variable "aws_account_id" {
-  description = "AWS account ID (null = use current account)"
-  type        = string
-  default     = null
-}
-
 variable "create_iam_role" {
   description = "Whether to create an IAM role for the AI reporter application"
   type        = bool
   default     = true
 }
 
-variable "iam_role_name" {
-  description = "Name of the IAM role for the AI reporter application"
-  type        = string
-  default     = "ai-reporter-role"
-}
+variable "assume_role_statements" {
+  description = "List of statements that can assume the IAM role"
+  type        = list(object({
+    Effect = string
+    Action = list(string)
+    Principal = map(list(string))
+    Condition = optional(map(map(string)))
+  }))
 
-variable "assume_role_principals" {
-  description = "List of service principals that can assume the IAM role"
-  type        = list(string)
-  default     = ["ec2.amazonaws.com", "ecs-tasks.amazonaws.com"]
+  default = [
+    {
+      Effect = "Allow"
+      Action = ["sts:AssumeRole", "sts:TagSession"]
+      Principal = {
+        Service = ["ec2.amazonaws.com", "pods.eks.amazonaws.com"]
+      }
+      # Condition = {
+      #   StringEquals = {
+      #     "aws:RequestTag/kubernetes-namespace": "Namespace"
+      #     "aws:RequestTag/kubernetes-service-account": "ServiceAccount"
+      #   }
+      # }
+    }
+  ]
 }
 
 variable "tags" {

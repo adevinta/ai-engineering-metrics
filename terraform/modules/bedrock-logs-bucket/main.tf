@@ -17,6 +17,7 @@ data "aws_region" "current" {}
 
 # S3 bucket for Bedrock logs
 resource "aws_s3_bucket" "bedrock_logs" {
+  count = var.create_bucket ? 1 : 0
   bucket        = var.bucket_name
   force_destroy = var.force_destroy
 
@@ -30,9 +31,15 @@ resource "aws_s3_bucket" "bedrock_logs" {
   )
 }
 
+data "aws_s3_bucket" "bedrock_logs" {
+  count = !var.create_bucket ? 1 : 0
+  bucket = var.bucket_name
+}
+
 # Enable versioning
 resource "aws_s3_bucket_versioning" "bedrock_logs" {
-  bucket = aws_s3_bucket.bedrock_logs.id
+  count = var.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.bedrock_logs[0].id
 
   versioning_configuration {
     status = var.enable_versioning ? "Enabled" : "Disabled"
@@ -41,7 +48,8 @@ resource "aws_s3_bucket_versioning" "bedrock_logs" {
 
 # Enable server-side encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "bedrock_logs" {
-  bucket = aws_s3_bucket.bedrock_logs.id
+  count = var.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.bedrock_logs[0].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -52,9 +60,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "bedrock_logs" {
   }
 }
 
+
 # Block public access
 resource "aws_s3_bucket_public_access_block" "bedrock_logs" {
-  bucket = aws_s3_bucket.bedrock_logs.id
+  count = var.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.bedrock_logs[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -62,10 +72,11 @@ resource "aws_s3_bucket_public_access_block" "bedrock_logs" {
   restrict_public_buckets = true
 }
 
+
 # Lifecycle policy for log retention
 resource "aws_s3_bucket_lifecycle_configuration" "bedrock_logs" {
-  count  = var.log_retention_days > 0 ? 1 : 0
-  bucket = aws_s3_bucket.bedrock_logs.id
+  count  = (var.create_bucket && var.log_retention_days > 0) ? 1 : 0
+  bucket = aws_s3_bucket.bedrock_logs[0].id
 
   rule {
     id     = "expire-old-logs"
@@ -109,7 +120,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "bedrock_logs" {
 
 # S3 bucket policy to allow Bedrock to write logs
 resource "aws_s3_bucket_policy" "bedrock_logs" {
-  bucket = aws_s3_bucket.bedrock_logs.id
+  count = var.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.bedrock_logs[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -123,13 +135,13 @@ resource "aws_s3_bucket_policy" "bedrock_logs" {
         Action = [
           "s3:PutObject"
         ]
-        Resource = "${aws_s3_bucket.bedrock_logs.arn}/*"
+        Resource = "${aws_s3_bucket.bedrock_logs[0].arn}/*"
         Condition = {
           StringEquals = {
-            "aws:SourceAccount" = var.aws_account_id != null ? var.aws_account_id : data.aws_caller_identity.current.account_id
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
           }
           ArnLike = {
-            "aws:SourceArn" = "arn:aws:bedrock:${data.aws_region.current.name}:${var.aws_account_id != null ? var.aws_account_id : data.aws_caller_identity.current.account_id}:*"
+            "aws:SourceArn" = "arn:aws:bedrock:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:*"
           }
         }
       },
@@ -140,10 +152,10 @@ resource "aws_s3_bucket_policy" "bedrock_logs" {
           Service = "bedrock.amazonaws.com"
         }
         Action   = "s3:GetBucketAcl"
-        Resource = aws_s3_bucket.bedrock_logs.arn
+        Resource = aws_s3_bucket.bedrock_logs[0].arn
         Condition = {
           StringEquals = {
-            "aws:SourceAccount" = var.aws_account_id != null ? var.aws_account_id : data.aws_caller_identity.current.account_id
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
           }
         }
       }
@@ -158,15 +170,7 @@ resource "aws_iam_role" "ai_reporter" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = var.assume_role_principals
-        }
-      }
-    ]
+    Statement = var.assume_role_statements
   })
 
   tags = var.tags
@@ -174,8 +178,8 @@ resource "aws_iam_role" "ai_reporter" {
 
 # IAM policy for reading S3 logs
 resource "aws_iam_role_policy" "ai_reporter_s3_read" {
-  count = var.create_iam_role ? 1 : 0
   name  = "s3-bedrock-logs-read"
+  count = var.create_iam_role ? 1 : 0
   role  = aws_iam_role.ai_reporter[0].id
 
   policy = jsonencode({
@@ -188,8 +192,7 @@ resource "aws_iam_role_policy" "ai_reporter_s3_read" {
           "s3:ListBucket"
         ]
         Resource = [
-          aws_s3_bucket.bedrock_logs.arn,
-          "${aws_s3_bucket.bedrock_logs.arn}/*"
+          "${var.create_bucket ? aws_s3_bucket.bedrock_logs[0].arn : data.aws_s3_bucket.bedrock_logs[0].arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/BedrockModelInvocationLogs/${data.aws_region.current.name}/*"
         ]
       }
     ]
