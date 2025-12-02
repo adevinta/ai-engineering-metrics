@@ -18,7 +18,7 @@ spec:
       containers:
       - name: webhook
         image: webhook:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         args:
           - "-config"
           - "/etc/config/webhook.yaml"

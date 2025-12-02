@@ -22,7 +22,7 @@ spec:
           containers:
           - name: collector
             image: collector:latest
-            imagePullPolicy: IfNotPresent
+            imagePullPolicy: Always
             args:
               - "-config"
               - "/etc/config/collector.yaml"
