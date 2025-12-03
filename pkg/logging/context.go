@@ -31,8 +31,25 @@ func LoggerFromCtx(ctx context.Context) *logrus.Entry {
 	return logrus.NewEntry(logrus.StandardLogger())
 }
 
+type LoggingOption func()
+
+func WithLoggingLevel(level logrus.Level) LoggingOption {
+	return func() {
+		logrus.SetLevel(level)
+	}
+}
+
+func WithLoggingFormatter(formatter logrus.Formatter) LoggingOption {
+	return func() {
+		logrus.SetFormatter(formatter)
+	}
+}
+
 // InitLogger sets up the default logger
-func InitLogger() {
+func InitLogger(opts ...LoggingOption) {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(logrus.InfoLevel)
+	for _, opt := range opts {
+		opt()
+	}
 }

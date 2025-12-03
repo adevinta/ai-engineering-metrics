@@ -1,12 +1,14 @@
 package users
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/dx"
 	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
+	"github.com/adevinta/ai-engineering-metrics/pkg/logging"
 )
 
 type DXUsers struct {
@@ -19,7 +21,7 @@ var _ UsersList = &DXUsers{}
 func (u *DXUsers) Include(userID string) bool {
 	u.m.Lock()
 	defer u.m.Unlock()
-	_, ok := u.users[userID]
+	_, ok := u.users[strings.ToLower(userID)]
 	return ok
 }
 
@@ -68,6 +70,9 @@ func NewGetDXUsers(config map[string]any) (*DXUsers, error) {
 }
 
 func getDXUsers(client *dx.WebAPIClient) (map[string]struct{}, error) {
+	logger := logging.LoggerFromCtx(context.Background())
+	logger = logger.WithField("component", "getdx_users")
+	logger.Info("listing teams")
 	teams, err := client.ListTeams()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list teams: %w", err)
@@ -82,6 +87,7 @@ func getDXUsers(client *dx.WebAPIClient) (map[string]struct{}, error) {
 			return nil, fmt.Errorf("failed to get team info: %w", err)
 		}
 		for _, contributor := range teamInfo.Contributors {
+			logger.WithField("contributor", contributor.Email).Debug("adding contributor")
 			users[strings.ToLower(contributor.Email)] = struct{}{}
 		}
 		users[strings.ToLower(teamInfo.Lead.Email)] = struct{}{}

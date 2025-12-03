@@ -44,7 +44,7 @@ func testFileContent(t *testing.T, filename string) {
 		t.Fatalf("failed to open %s: %v", filename, err)
 	}
 	defer fd.Close()
-	entries, err := parseBedrockLogs(fd)
+	entries, err := parseBedrockLogs(context.Background(), fd)
 	if err != nil {
 		t.Fatalf("failed to parse bedrock logs: %v", err)
 	}

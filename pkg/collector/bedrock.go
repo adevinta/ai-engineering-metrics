@@ -101,7 +101,8 @@ func (c *BedrockCollector) Name() string {
 	return c.toolName
 }
 
-func parseBedrockLogs(body io.Reader) ([]BedrockLogEntry, error) {
+func parseBedrockLogs(ctx context.Context, body io.Reader) ([]BedrockLogEntry, error) {
+	logger := logging.LoggerFromCtx(ctx)
 	magic := make([]byte, 2)
 	_, err := body.Read(magic)
 	if err != nil {
@@ -126,11 +127,14 @@ func parseBedrockLogs(body io.Reader) ([]BedrockLogEntry, error) {
 		entries = append(entries, entry)
 	}
 
+	logger.WithField("entries", len(entries)).Info("parsed bedrock log entries")
+
 	return entries, nil
 }
 
 func (c *BedrockCollector) aggregateFromJSONData(ctx context.Context, aggregated map[string]AggregatedMetric, from, to time.Time, reader io.Reader) error {
-	entries, err := parseBedrockLogs(reader)
+	logger := logging.LoggerFromCtx(ctx)
+	entries, err := parseBedrockLogs(ctx, reader)
 	if err != nil {
 		return fmt.Errorf("failed to parse bedrock logs: %w", err)
 	}
@@ -138,14 +142,17 @@ func (c *BedrockCollector) aggregateFromJSONData(ctx context.Context, aggregated
 		if entry.Timestamp.Before(from) || entry.Timestamp.After(to) {
 			continue
 		}
+		logger.WithField("user_id", entry.Identity.ARN).Debug("aggregating bedrock log entry")
 		userID, err := c.mapper.Map(ctx, entry.Identity.ARN)
 		if err != nil {
 			return fmt.Errorf("failed to map user ID: %w", err)
 		}
 		if c.filter != nil && !c.filter.Include(userID) {
+			logger.WithField("user_id", userID).Debug("skipping entry. User is excluded from the filter")
 			continue
 		}
 
+		logger.WithField("user_id", userID).Debug("aggregating bedrock log entry")
 		metric := aggregated[userID]
 		metric.InputTokens += entry.Input.InputTokenCount
 		metric.OutputTokens += entry.Output.OutputTokenCount
@@ -206,6 +213,7 @@ func (c *BedrockCollector) collectFromLocalPath(ctx context.Context, from, to ti
 		if info.IsDir() {
 			return nil
 		}
+		logging.LoggerFromCtx(ctx).WithField("path", path).Printf("aggregating bedrock log entry from local path")
 		return c.aggregateFromPath(ctx, aggregated, from, to, path)
 	})
 	return aggregated, err
@@ -244,7 +252,6 @@ func (c *BedrockCollector) collectFromS3(ctx context.Context, from, to time.Time
 			logger.Debug("processing s3 object")
 
 			if err := c.aggregateFromS3(ctx, aggregated, from, to, *obj.Key); err != nil {
-				logger.WithError(err).Error("failed to aggregate from S3 object")
 				return nil, fmt.Errorf("failed to aggregate from S3: %w", err)
 			}
 			fileCount++

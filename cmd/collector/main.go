@@ -34,8 +34,9 @@ func main() {
 }
 
 func run() error {
+	logging.InitLogger(logging.WithLoggingFormatter(&logrus.JSONFormatter{}), logging.WithLoggingLevel(logrus.TraceLevel))
 	ctx := logging.WithLoggingFields(context.Background(), logrus.Fields{
-		"component": "collector_main",
+		"component":   "collector_main",
 		"config_path": *configPath,
 	})
 	logger := logging.LoggerFromCtx(ctx)
@@ -93,8 +94,8 @@ func run() error {
 
 	logger.WithFields(logrus.Fields{
 		"start_time": start.Format(time.RFC3339),
-		"end_time": end.Format(time.RFC3339),
-		"utc": *utc,
+		"end_time":   end.Format(time.RFC3339),
+		"utc":        *utc,
 	}).Info("time range configured")
 
 	// Run collection and publishing
