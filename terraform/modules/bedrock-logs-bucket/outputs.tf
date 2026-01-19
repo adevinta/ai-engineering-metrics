@@ -35,7 +35,7 @@ output "iam_role_name" {
 
 output "bedrock_logging_config" {
   description = "Configuration for AWS Bedrock model invocation logging"
-  value = !var.create_bucket ? null:{
+  value = !var.create_bucket ? null : {
     bucket_name = aws_s3_bucket.bedrock_logs[0].id
     key_prefix  = "bedrock-logs/"
     region      = data.aws_region.current.name
@@ -44,7 +44,7 @@ output "bedrock_logging_config" {
 
 output "aws_cli_command" {
   description = "AWS CLI command to enable Bedrock model invocation logging"
-  value       =  <<-EOT
+  value       = <<-EOT
     aws bedrock put-model-invocation-logging-configuration \
       --region ${data.aws_region.current.name} \
       --logging-config '{

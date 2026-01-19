@@ -72,8 +72,8 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 	// Log the outgoing request
 	logger := logging.LoggerFromCtx(req.Context())
 	logger.WithFields(logrus.Fields{
-		"method": "POST",
-		"url": url,
+		"method":       "POST",
+		"url":          url,
 		"content_type": "application/json",
 		"payload_size": len(data),
 	}).Info("sending dx api request")

@@ -17,7 +17,7 @@ data "aws_region" "current" {}
 
 # S3 bucket for Bedrock logs
 resource "aws_s3_bucket" "bedrock_logs" {
-  count = var.create_bucket ? 1 : 0
+  count         = var.create_bucket ? 1 : 0
   bucket        = var.bucket_name
   force_destroy = var.force_destroy
 
@@ -32,13 +32,13 @@ resource "aws_s3_bucket" "bedrock_logs" {
 }
 
 data "aws_s3_bucket" "bedrock_logs" {
-  count = !var.create_bucket ? 1 : 0
+  count  = !var.create_bucket ? 1 : 0
   bucket = var.bucket_name
 }
 
 # Enable versioning
 resource "aws_s3_bucket_versioning" "bedrock_logs" {
-  count = var.create_bucket ? 1 : 0
+  count  = var.create_bucket ? 1 : 0
   bucket = aws_s3_bucket.bedrock_logs[0].id
 
   versioning_configuration {
@@ -48,7 +48,7 @@ resource "aws_s3_bucket_versioning" "bedrock_logs" {
 
 # Enable server-side encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "bedrock_logs" {
-  count = var.create_bucket ? 1 : 0
+  count  = var.create_bucket ? 1 : 0
   bucket = aws_s3_bucket.bedrock_logs[0].id
 
   rule {
@@ -63,7 +63,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "bedrock_logs" {
 
 # Block public access
 resource "aws_s3_bucket_public_access_block" "bedrock_logs" {
-  count = var.create_bucket ? 1 : 0
+  count  = var.create_bucket ? 1 : 0
   bucket = aws_s3_bucket.bedrock_logs[0].id
 
   block_public_acls       = true
@@ -120,7 +120,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "bedrock_logs" {
 
 # S3 bucket policy to allow Bedrock to write logs
 resource "aws_s3_bucket_policy" "bedrock_logs" {
-  count = var.create_bucket ? 1 : 0
+  count  = var.create_bucket ? 1 : 0
   bucket = aws_s3_bucket.bedrock_logs[0].id
 
   policy = jsonencode({
@@ -169,7 +169,7 @@ resource "aws_iam_role" "ai_reporter" {
   name  = var.iam_role_name
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = var.assume_role_statements
   })
 

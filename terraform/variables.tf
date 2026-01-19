@@ -60,9 +60,9 @@ variable "create_iam_role" {
 
 variable "assume_role_statements" {
   description = "List of statements that can assume the IAM role"
-  type        = list(object({
-    Effect = string
-    Action = list(string)
+  type = list(object({
+    Effect    = string
+    Action    = list(string)
     Principal = map(list(string))
     Condition = optional(map(map(string)))
   }))
