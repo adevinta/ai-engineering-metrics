@@ -51,7 +51,7 @@ func NewCollector(cfg CollectorConfig, userList users.UsersList) (Collector, err
 			return nil, fmt.Errorf("failed to load AWS config: %w", err)
 		}
 
-		chainIntf := cfg.Config["assune_role_chain"]
+		chainIntf := cfg.Config["assume_role_chain"]
 		if chainIntf != nil {
 			chain := chainIntf.([]any)
 			for _, role := range chain {
