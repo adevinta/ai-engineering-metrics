@@ -1,0 +1,38 @@
+name: getdx-ai-poc-template
+url: https://github.mpi-internal.com/organizations/getdx-ai-poc/settings/apps
+public: false
+default_permissions:
+  # Repository Permissions
+  metadata: read
+  issues: read
+  pull_requests: read
+  deployments: read
+  # Organization Permissions
+  members: read
+default_events:
+  - deployment
+  - deployment_status
+  - deployment_protection_rule
+  - deployment_review
+  - deploy_key
+  - issue_comment
+  - issues
+  - label
+  - member
+  - membership
+  - milestone
+  - organization
+  - public
+  - pull_request
+  - pull_request_review
+  - pull_request_review_comment
+  - pull_request_review_thread
+  - repository
+  - star
+  - team
+  - team_add
+  - watch
+  - installation_target
+  - meta
+  - security_advisory
+  - merge_queue_entry
