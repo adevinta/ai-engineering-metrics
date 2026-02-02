@@ -101,6 +101,8 @@ func NewCollector(cfg CollectorConfig, userList users.UsersList) (Collector, err
 
 		c := NewBedrockCollector(s3Client, localPath, bucketName, prefix, cfg.Name, mapper, userList)
 		return c, nil
+	case "github":
+		return NewGitHubCollector(cfg, userList)
 	default:
 		return nil, fmt.Errorf("unknown collector type: %s", cfg.Type)
 	}

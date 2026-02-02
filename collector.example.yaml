@@ -24,6 +24,43 @@ pipelines:
           #   regex: 'session-(.+)'
           #   replacement: 'user-$1@example.com'
 
+      # GitHub AI Readiness Collector - scans repositories for AI configuration files
+      - name: github-ai-readiness
+        type: github
+        enabled: false  # Enable when ready to use
+        config:
+          github_token: ${env.GITHUB_TOKEN}  # GitHub Personal Access Token with repo read permissions
+
+          # SCANNING OPTIONS (choose one or combine):
+
+          # Option 1: Scan specific repositories (precise control)
+          repositories:
+            - "adevinta/ai-engineering-metrics"
+            - "adevinta/data-platform"
+            - "your-org/your-repo"
+
+          # Option 2: Scan all repositories user has direct access to
+          scan_all_repos: false
+
+          # Option 3: Scan ALL repositories from ALL organizations user belongs to (most comprehensive)
+          # This discovers organizations first, then scans all repos within them
+          scan_all_organizations: false
+
+          # Optional: Filter organizations when using scan_all_repos or scan_all_organizations
+          # (only scan repos from these organizations)
+          organization_filter:
+            - "adevinta"
+            - "your-org"
+
+          # Optional: AI indicator files to look for (defaults to CLAUDE.md variations)
+          ai_indicators:
+            - "CLAUDE.md"
+            - "claude.md"
+            - "Claude.md"
+        user_mapping:
+          type: passthrough
+          config: {}
+
     publishers:
       - name: getdx
         type: getdx
@@ -33,6 +70,8 @@ pipelines:
           api_key: ${GETDX_API_KEY}
           tools:
           - claude
+          - ai-readiness          # Individual repository AI readiness status
+          - ai-readiness-summary  # Organizational AI readiness percentages
 
     # User filtering configuration
     users:
