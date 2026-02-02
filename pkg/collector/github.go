@@ -72,6 +72,16 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 		return nil, fmt.Errorf("github_token cannot be empty")
 	}
 
+	// Extract GitHub base URL (optional, defaults to public GitHub)
+	var baseURL string
+	if baseURLRaw, ok := cfg.Config["github_base_url"].(string); ok {
+		expandedBaseURL, err := lcel.ExpandEnv(baseURLRaw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand github_base_url: %w", err)
+		}
+		baseURL = expandedBaseURL
+	}
+
 	// Check for scan_all_repos option
 	scanAllRepos := false
 	if scanAllRaw, ok := cfg.Config["scan_all_repos"].(bool); ok {
@@ -128,7 +138,7 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 		}
 	} else {
 		// Default AI indicators
-		aiIndicators = []string{"CLAUDE.md", "claude.md", "Claude.md"}
+		aiIndicators = []string{"CLAUDE.md", "claude.md", "Claude.md", "AGENTS.md", "agents.md", ".github/copilot-instructions.md"}
 	}
 
 	// Create user mapper
@@ -141,6 +151,17 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tc := oauth2.NewClient(context.Background(), ts)
 	client := github.NewClient(tc)
+
+	// Set custom base URL for GitHub Enterprise
+	if baseURL != "" {
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL += "/"
+		}
+		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set GitHub Enterprise URL: %w", err)
+		}
+	}
 
 	return &GitHubCollector{
 		client:               client,

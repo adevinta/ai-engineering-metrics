@@ -30,6 +30,7 @@ pipelines:
         enabled: false  # Enable when ready to use
         config:
           github_token: ${env.GITHUB_TOKEN}  # GitHub Personal Access Token with repo read permissions
+          # github_base_url: https://your-ghe-instance.com/api/v3/  # For GitHub Enterprise - uncomment and set your GHE API URL
 
           # SCANNING OPTIONS (choose one or combine):
 
@@ -52,11 +53,14 @@ pipelines:
             - "adevinta"
             - "your-org"
 
-          # Optional: AI indicator files to look for (defaults to CLAUDE.md variations)
+          # Optional: AI indicator files to look for (defaults shown below)
           ai_indicators:
             - "CLAUDE.md"
             - "claude.md"
             - "Claude.md"
+            - "AGENTS.md"
+            - "agents.md"
+            - ".github/copilot-instructions.md"
         user_mapping:
           type: passthrough
           config: {}
