@@ -136,7 +136,7 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "valid scan_all_organizations configuration",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"github_token":          "test-token",
+					"github_token":           "test-token",
 					"scan_all_organizations": true,
 					"organization_filter": []interface{}{
 						"test-org",
@@ -153,7 +153,7 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "scan_all_organizations with repositories combination",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"github_token":          "test-token",
+					"github_token":           "test-token",
 					"scan_all_organizations": true,
 					"repositories": []interface{}{
 						"manual/repo",
@@ -290,12 +290,12 @@ func TestRepositoryMetrics_Structure(t *testing.T) {
 
 	// Verify structure can be converted to map[string]any for metrics
 	metricsMap := map[string]any{
-		"repository":           repoMetrics.Repository,
-		"organization":         repoMetrics.Organization,
-		"is_ai_ready":          repoMetrics.IsAIReady,
-		"ai_indicators_found":  repoMetrics.AIIndicatorsFound,
-		"scan_timestamp":       repoMetrics.ScanTimestamp,
-		"repository_metadata":  repoMetrics.RepositoryMetadata,
+		"repository":          repoMetrics.Repository,
+		"organization":        repoMetrics.Organization,
+		"is_ai_ready":         repoMetrics.IsAIReady,
+		"ai_indicators_found": repoMetrics.AIIndicatorsFound,
+		"scan_timestamp":      repoMetrics.ScanTimestamp,
+		"repository_metadata": repoMetrics.RepositoryMetadata,
 	}
 
 	assert.Equal(t, "owner/repo", metricsMap["repository"])
@@ -309,11 +309,11 @@ func TestOrganizationSummaryMetrics_Structure(t *testing.T) {
 	// Test that the organization summary structure is correctly formatted
 	now := time.Now()
 	orgSummary := OrganizationSummaryMetrics{
-		Organization:         "test-org",
-		TotalReposScanned:    10,
-		AIReadyRepos:         7,
-		AIReadinessPercent:   70.0,
-		ScanTimestamp:        now,
+		Organization:       "test-org",
+		TotalReposScanned:  10,
+		AIReadyRepos:       7,
+		AIReadinessPercent: 70.0,
+		ScanTimestamp:      now,
 	}
 
 	// Verify structure can be converted to map[string]any for metrics
@@ -392,7 +392,7 @@ func TestGitHubCollector_ScanAllOrganizations(t *testing.T) {
 	// This would test the scan_all_organizations functionality
 	config := CollectorConfig{
 		Config: map[string]any{
-			"github_token":          "${env.GITHUB_TOKEN}",
+			"github_token":           "${env.GITHUB_TOKEN}",
 			"scan_all_organizations": true,
 			"organization_filter": []interface{}{
 				"adevinta", // Only scan adevinta organization

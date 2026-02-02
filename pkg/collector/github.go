@@ -17,14 +17,14 @@ import (
 
 // GitHubCollector collects AI readiness metrics from GitHub repositories
 type GitHubCollector struct {
-	client              *github.Client
-	repositories        []string
-	aiIndicators        []string
-	scanAllRepos        bool
+	client               *github.Client
+	repositories         []string
+	aiIndicators         []string
+	scanAllRepos         bool
 	scanAllOrganizations bool     // New: scan all organizations user has access to
-	organizationFilter  []string // Optional: filter organizations when scanning
-	mapper              mapper.UserIDMapper
-	filter              users.UsersList
+	organizationFilter   []string // Optional: filter organizations when scanning
+	mapper               mapper.UserIDMapper
+	filter               users.UsersList
 }
 
 var _ Collector = (*GitHubCollector)(nil)
@@ -37,21 +37,21 @@ type RepositoryMetrics struct {
 	AIIndicatorsFound  []string  `json:"ai_indicators_found"`
 	ScanTimestamp      time.Time `json:"scan_timestamp"`
 	RepositoryMetadata struct {
-		Private    bool      `json:"private"`
-		Language   *string   `json:"language"`
-		LastPush   time.Time `json:"last_push"`
-		StarCount  int       `json:"star_count"`
-		ForkCount  int       `json:"fork_count"`
+		Private   bool      `json:"private"`
+		Language  *string   `json:"language"`
+		LastPush  time.Time `json:"last_push"`
+		StarCount int       `json:"star_count"`
+		ForkCount int       `json:"fork_count"`
 	} `json:"repository_metadata"`
 }
 
 // OrganizationSummaryMetrics holds aggregated AI readiness data for an organization
 type OrganizationSummaryMetrics struct {
-	Organization         string    `json:"organization"`
-	TotalReposScanned    int       `json:"total_repos_scanned"`
-	AIReadyRepos         int       `json:"ai_ready_repos"`
-	AIReadinessPercent   float64   `json:"ai_readiness_percentage"`
-	ScanTimestamp        time.Time `json:"scan_timestamp"`
+	Organization       string    `json:"organization"`
+	TotalReposScanned  int       `json:"total_repos_scanned"`
+	AIReadyRepos       int       `json:"ai_ready_repos"`
+	AIReadinessPercent float64   `json:"ai_readiness_percentage"`
+	ScanTimestamp      time.Time `json:"scan_timestamp"`
 }
 
 // NewGitHubCollector creates a new GitHub collector
@@ -162,11 +162,11 @@ func (g *GitHubCollector) Name() string {
 // Collect scans configured repositories for AI readiness indicators and returns metrics
 func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (map[ToolUsage]Metric, error) {
 	ctx = logging.WithLoggingFields(ctx, logrus.Fields{
-		"component":             "github_collector",
-		"collector":             "github",
-		"repositories":          len(g.repositories),
-		"ai_indicators":         len(g.aiIndicators),
-		"scan_all_repos":        g.scanAllRepos,
+		"component":              "github_collector",
+		"collector":              "github",
+		"repositories":           len(g.repositories),
+		"ai_indicators":          len(g.aiIndicators),
+		"scan_all_repos":         g.scanAllRepos,
 		"scan_all_organizations": g.scanAllOrganizations,
 	})
 	logger := logging.LoggerFromCtx(ctx)
@@ -284,12 +284,12 @@ func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (ma
 			UserID:   mappedUserID,
 			ToolName: "ai-readiness",
 			Metrics: map[string]any{
-				"repository":           repoMetrics.Repository,
-				"organization":         repoMetrics.Organization,
-				"is_ai_ready":          repoMetrics.IsAIReady,
-				"ai_indicators_found":  repoMetrics.AIIndicatorsFound,
-				"scan_timestamp":       repoMetrics.ScanTimestamp,
-				"repository_metadata":  repoMetrics.RepositoryMetadata,
+				"repository":          repoMetrics.Repository,
+				"organization":        repoMetrics.Organization,
+				"is_ai_ready":         repoMetrics.IsAIReady,
+				"ai_indicators_found": repoMetrics.AIIndicatorsFound,
+				"scan_timestamp":      repoMetrics.ScanTimestamp,
+				"repository_metadata": repoMetrics.RepositoryMetadata,
 			},
 		}
 
@@ -340,19 +340,19 @@ func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (ma
 			UserID:   mappedOrgID,
 			ToolName: "ai-readiness-summary",
 			Metrics: map[string]any{
-				"organization":           summary.Organization,
-				"total_repos_scanned":    summary.TotalReposScanned,
-				"ai_ready_repos":         summary.AIReadyRepos,
+				"organization":            summary.Organization,
+				"total_repos_scanned":     summary.TotalReposScanned,
+				"ai_ready_repos":          summary.AIReadyRepos,
 				"ai_readiness_percentage": summary.AIReadinessPercent,
-				"scan_timestamp":         summary.ScanTimestamp,
+				"scan_timestamp":          summary.ScanTimestamp,
 			},
 		}
 	}
 
 	logger.WithFields(logrus.Fields{
-		"total_metrics":      len(metrics),
-		"organizations":      len(orgSummaries),
-		"repositories":       len(g.repositories),
+		"total_metrics": len(metrics),
+		"organizations": len(orgSummaries),
+		"repositories":  len(g.repositories),
 	}).Info("github ai readiness collection completed")
 
 	return metrics, nil
