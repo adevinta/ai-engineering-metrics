@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -51,11 +53,27 @@ func NewGitHubAppAuth(appID int64, privateKeyPEM string, logger *logrus.Entry) (
 	}, nil
 }
 
-// parsePrivateKey parses RSA private key from PEM format
-func parsePrivateKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
+// parsePrivateKey parses RSA private key from PEM format or base64 encoded PEM
+func parsePrivateKey(privateKeyInput string) (*rsa.PrivateKey, error) {
+	privateKeyPEM := privateKeyInput
+
+	// Check if input looks like base64 encoded data (no PEM headers and only base64 characters)
+	if !strings.Contains(privateKeyInput, "-----BEGIN") && !strings.Contains(privateKeyInput, "-----END") {
+		// Try to decode as base64
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(privateKeyInput))
+		if err != nil {
+			// If base64 decoding fails, try base64 URL encoding
+			decoded, err = base64.URLEncoding.DecodeString(strings.TrimSpace(privateKeyInput))
+			if err != nil {
+				return nil, fmt.Errorf("input appears to be base64 but failed to decode: %w", err)
+			}
+		}
+		privateKeyPEM = string(decoded)
+	}
+
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
+		return nil, fmt.Errorf("failed to decode PEM block (input may be invalid PEM format or incorrectly encoded)")
 	}
 
 	// Try PKCS#1 format first

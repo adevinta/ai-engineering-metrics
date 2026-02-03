@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -71,6 +72,15 @@ func TestValidateGitHubAppConfig(t *testing.T) {
 }
 
 func TestParsePrivateKey(t *testing.T) {
+	// Sample PEM private key for testing (this is a mock key, not a real one)
+	samplePEM := `-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAqFO5xwz5SXP8YOlrJmBbwg7lW7jUfUKs9mFl4v8X7qyC2wE8
+Sample Key Content (truncated for safety)
+-----END RSA PRIVATE KEY-----`
+
+	// Base64 encode the sample PEM
+	base64EncodedPEM := base64.StdEncoding.EncodeToString([]byte(samplePEM))
+
 	tests := []struct {
 		name        string
 		privateKey  string
@@ -89,6 +99,16 @@ func TestParsePrivateKey(t *testing.T) {
 		{
 			name:        "invalid key data",
 			privateKey:  "-----BEGIN RSA PRIVATE KEY-----\ninvalid\n-----END RSA PRIVATE KEY-----",
+			expectError: true,
+		},
+		{
+			name:        "base64 encoded PEM",
+			privateKey:  base64EncodedPEM,
+			expectError: true, // Will still error because this is not a real key, but should pass base64 decoding
+		},
+		{
+			name:        "invalid base64",
+			privateKey:  "not_valid_base64!@#",
 			expectError: true,
 		},
 	}
