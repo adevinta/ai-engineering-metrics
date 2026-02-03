@@ -1,129 +1,62 @@
-# Configuration for AI Engineering Metrics pipeline
-# This file follows the current schema where everything is organized into pipelines
+# AI Engineering Metrics Collector Configuration Example
+# This example shows how to collect Claude usage metrics and AI readiness metrics
 
 pipelines:
-  - # Pipeline 1: Main AI metrics collection pipeline
+  # Pipeline 1: Claude Usage Metrics with User Filtering
+  - users:
+      type: getdx
+      config:
+        api_key: ${env.GETDX_WEB_API_KEY}
     collectors:
-      - name: bedrock-s3 # of the tool as it appears in GetDX
+      - name: claude
         type: bedrock
         enabled: true
         config:
           bucket: my-bedrock-logs-bucket
-          prefix: bedrock-logs/
-          # local_path: /tmp/bedrock-logs  # Optional: local directory for temporary file storage
+          prefix: AWSLogs/123456789012/BedrockModelInvocationLogs/us-east-1/
+          costs:
+            region: us-east-1
+            discount: 0%
         user_mapping:
-          type: passthrough
-          config: {}
-          # Alternative user mapping options:
-          # type: static
-          # config:
-          #   session-123: user@example.com
-          #   session-456: another@example.com
-          # type: regex
-          # config:
-          #   regex: 'session-(.+)'
-          #   replacement: 'user-$1@example.com'
-
-      # GitHub AI Readiness Collector - scans repositories for AI configuration files
-      - name: github-ai-readiness
-        type: github
-        enabled: false  # Enable when ready to use
-        config:
-          # AUTHENTICATION: GitHub App authentication (required)
-          app_id: ${env.GITHUB_APP_ID}          # GitHub App ID from app settings
-          private_key: ${env.GITHUB_PRIVATE_KEY}  # Private key content or file path
-          # Setup guide: See claudedocs/github-app-configuration.md
-
-          # Optional: GitHub Enterprise base URL
-          # github_base_url: https://your-ghe-instance.com/api/v3/
-
-          # SCANNING OPTIONS (choose one or combine):
-
-          # Option 1: Scan specific repositories (precise control)
-          repositories:
-            - "adevinta/ai-engineering-metrics"
-            - "adevinta/data-platform"
-            - "your-org/your-repo"
-
-          # Option 2: Scan all repositories user has direct access to
-          scan_all_repos: false
-
-          # Option 3: Scan ALL repositories from ALL organizations (RECOMMENDED)
-          # Uses GitHub App installations to discover organizations and repositories
-          scan_all_organizations: false
-
-          # Optional: Filter organizations when using scan_all_repos or scan_all_organizations
-          # (only scan repos from these organizations)
-          organization_filter:
-            - "adevinta"
-            - "your-org"
-
-          # Optional: AI indicator files to look for (defaults shown below)
-          ai_indicators:
-            - "CLAUDE.md"
-            - "claude.md"
-            - "Claude.md"
-            - "AGENTS.md"
-            - "agents.md"
-            - ".github/copilot-instructions.md"
-            - ".claude/instructions.md"        # Additional AI instruction files
-            - "AI_GUIDELINES.md"
-        user_mapping:
-          type: passthrough
-          config: {}
-
-      # ALTERNATIVE: Organization-focused configuration
-      # Uncomment and use instead of the above for organization-wide scanning
-      # - name: github-ai-readiness-org
-      #   type: github
-      #   enabled: true
-      #   config:
-      #     # GitHub App authentication (required)
-      #     app_id: ${env.GITHUB_APP_ID}
-      #     private_key: ${env.GITHUB_PRIVATE_KEY}
-      #
-      #     # Scan all organizations where the app is installed
-      #     scan_all_organizations: true
-      #
-      #     # Optional: filter to specific organizations
-      #     organization_filter:
-      #       - "my-primary-org"
-      #       - "partner-org"
-      #
-      #     # GitHub Enterprise support
-      #     # github_base_url: https://github.mycompany.com/api/v3
-      #   user_mapping:
-      #     type: identity  # Map repository names to themselves
-
+          type: regex
+          config:
+            regex: "arn:aws:sts::123456789012:assumed-role/MyRole/(.*@company.com)"
+            replacement: "$1"
     publishers:
-      # Main GetDX publisher for Claude usage metrics
       - type: getdx
         config:
           api_base_url: https://api.getdx.com
           api_token: ${env.GETDX_API_KEY}
           tools:
-          - claude
+            - claude
 
-      # GetDX AI-enabled repositories publisher for AI readiness metrics
+  # Pipeline 2: AI Readiness Metrics (no user filtering needed)
+  - collectors:
+      - name: github-ai-readiness
+        type: github
+        enabled: true
+        config:
+          app_id: ${env.GITHUB_APP_ID}
+          private_key: ${env.GITHUB_PRIVATE_KEY}
+          scan_all_organizations: true
+          organization_filter:
+            - "my-org"
+        user_mapping:
+          type: passthrough
+          config: {}
+    publishers:
       - type: getdx-ai-enabled-repos
         config:
           api_base_url: https://api.getdx.com
           api_token: ${env.GETDX_API_KEY}
           tools:
-          - ai-readiness          # Individual repository AI readiness status
-          - ai-readiness-summary  # Organizational AI readiness percentages
+            - ai-readiness
+            - ai-readiness-summary
 
-    # User filtering configuration
-    users:
-      type: static
-      config:
-        user_ids:
-          - user@example.com      # Include specific users
-          - admin@example.com
-          - service-account-123
-          # Add more user IDs as needed
-      # Alternatively, use GetDX API to get the list of users
-      # type: getdx
-      # config:
-      #  api_key: ${GETDX_WEB_API_KEY}
-
+# Alternative user filtering options for Pipeline 1:
+# users:
+#   type: static
+#   config:
+#     user_ids:
+#       - user1@company.com
+#       - user2@company.com

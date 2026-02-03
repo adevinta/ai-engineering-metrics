@@ -168,7 +168,7 @@ func (p *GetDXAIEnabledReposPublisher) convertToCustomMetrics(key collector.Tool
 
 		// Create the custom metric
 		customMetrics = append(customMetrics, dx.DXCustomMetric{
-			Reference: fmt.Sprintf("ai-readiness-%s", organization),
+			Reference: fmt.Sprintf("ai-readiness-%s", sanitizeKey(organization)),
 			Key:       fmt.Sprintf("repository_ai_ready_%s", sanitizeKey(repository)),
 			Value:     readinessValue,
 			Metadata: map[string]any{
@@ -189,7 +189,7 @@ func (p *GetDXAIEnabledReposPublisher) convertToCustomMetrics(key collector.Tool
 		// Total repositories scanned
 		if totalRepos, ok := metric.Metrics["total_repos_scanned"].(int); ok {
 			customMetrics = append(customMetrics, dx.DXCustomMetric{
-				Reference: fmt.Sprintf("ai-readiness-summary-%s", organization),
+				Reference: fmt.Sprintf("ai-readiness-summary-%s", sanitizeKey(organization)),
 				Key:       "total_repos_scanned",
 				Value:     float64(totalRepos),
 				Metadata: map[string]any{
@@ -204,7 +204,7 @@ func (p *GetDXAIEnabledReposPublisher) convertToCustomMetrics(key collector.Tool
 		// AI ready repositories count
 		if aiReadyRepos, ok := metric.Metrics["ai_ready_repos"].(int); ok {
 			customMetrics = append(customMetrics, dx.DXCustomMetric{
-				Reference: fmt.Sprintf("ai-readiness-summary-%s", organization),
+				Reference: fmt.Sprintf("ai-readiness-summary-%s", sanitizeKey(organization)),
 				Key:       "ai_ready_repos",
 				Value:     float64(aiReadyRepos),
 				Metadata: map[string]any{
@@ -219,7 +219,7 @@ func (p *GetDXAIEnabledReposPublisher) convertToCustomMetrics(key collector.Tool
 		// AI readiness percentage
 		if readinessPercent, ok := metric.Metrics["ai_readiness_percentage"].(float64); ok {
 			customMetrics = append(customMetrics, dx.DXCustomMetric{
-				Reference: fmt.Sprintf("ai-readiness-summary-%s", organization),
+				Reference: fmt.Sprintf("ai-readiness-summary-%s", sanitizeKey(organization)),
 				Key:       "ai_readiness_percentage",
 				Value:     readinessPercent,
 				Metadata: map[string]any{

@@ -148,6 +148,26 @@ func TestConvertToCustomMetrics(t *testing.T) {
 			expectedCount: 0,
 			expectedError: true,
 		},
+		{
+			name: "ai-readiness-summary metric with special chars in org name",
+			toolUsage: collector.ToolUsage{
+				UserID:   "special-org@example.com",
+				ToolName: "ai-readiness-summary",
+			},
+			metric: collector.Metric{
+				UserID:   "special-org@example.com",
+				ToolName: "ai-readiness-summary",
+				Metrics: map[string]any{
+					"organization":            "claude-code-actions", // Org name with hyphens
+					"total_repos_scanned":     50,
+					"ai_ready_repos":          25,
+					"ai_readiness_percentage": 50.0,
+				},
+			},
+			expectedCount:  3,
+			expectedError:  false,
+			expectedValues: []float64{50.0, 25.0, 50.0},
+		},
 	}
 
 	for _, tt := range tests {
