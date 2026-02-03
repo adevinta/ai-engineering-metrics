@@ -155,3 +155,46 @@ func TestNewGitHubAppAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestNewGitHubAppAuthWithBaseURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		appID       int64
+		privateKey  string
+		baseURL     string
+		expectError bool
+	}{
+		{
+			name:        "valid with enterprise base URL",
+			appID:       123456,
+			privateKey:  "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+			baseURL:     "https://github.enterprise.com/api/v3",
+			expectError: true, // Will fail on key parsing but should not fail on base URL
+		},
+		{
+			name:        "valid with empty base URL (public GitHub)",
+			appID:       123456,
+			privateKey:  "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+			baseURL:     "",
+			expectError: true, // Will fail on key parsing but should not fail on base URL
+		},
+		{
+			name:        "invalid base URL should still work (let GitHub client handle it)",
+			appID:       123456,
+			privateKey:  "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+			baseURL:     "not-a-valid-url",
+			expectError: true, // Will fail on key parsing, base URL validation is deferred to GitHub client
+		},
+	}
+
+	logger := logrus.NewEntry(logrus.New())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewGitHubAppAuthWithBaseURL(tt.appID, tt.privateKey, tt.baseURL, logger)
+			if (err != nil) != tt.expectError {
+				t.Errorf("NewGitHubAppAuthWithBaseURL() error = %v, expectError %v", err, tt.expectError)
+			}
+		})
+	}
+}

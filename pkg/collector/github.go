@@ -111,7 +111,7 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 
 	// Create GitHub App auth handler
 	logger := logging.LoggerFromCtx(context.Background()).WithField("component", "github_app_auth")
-	githubApp, err := NewGitHubAppAuth(appID, privateKey, logger)
+	githubApp, err := NewGitHubAppAuthWithBaseURL(appID, privateKey, baseURL, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GitHub App authentication: %w", err)
 	}

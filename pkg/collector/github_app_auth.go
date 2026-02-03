@@ -23,6 +23,7 @@ type GitHubAppAuth struct {
 	privateKey *rsa.PrivateKey
 	client     *github.Client
 	logger     *logrus.Entry
+	baseURL    string // GitHub Enterprise base URL (empty for public GitHub)
 }
 
 // Installation represents a GitHub App installation
@@ -36,6 +37,11 @@ type Installation struct {
 
 // NewGitHubAppAuth creates a new GitHub App authentication client
 func NewGitHubAppAuth(appID int64, privateKeyPEM string, logger *logrus.Entry) (*GitHubAppAuth, error) {
+	return NewGitHubAppAuthWithBaseURL(appID, privateKeyPEM, "", logger)
+}
+
+// NewGitHubAppAuthWithBaseURL creates a new GitHub App authentication client with custom base URL
+func NewGitHubAppAuthWithBaseURL(appID int64, privateKeyPEM string, baseURL string, logger *logrus.Entry) (*GitHubAppAuth, error) {
 	// Parse private key
 	privateKey, err := parsePrivateKey(privateKeyPEM)
 	if err != nil {
@@ -45,11 +51,23 @@ func NewGitHubAppAuth(appID int64, privateKeyPEM string, logger *logrus.Entry) (
 	// Create initial client with no authentication (will be enhanced with JWT)
 	client := github.NewClient(nil)
 
+	// Set custom base URL for GitHub Enterprise
+	if baseURL != "" {
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL += "/"
+		}
+		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set GitHub Enterprise URL: %w", err)
+		}
+	}
+
 	return &GitHubAppAuth{
 		appID:      appID,
 		privateKey: privateKey,
 		client:     client,
 		logger:     logger,
+		baseURL:    baseURL,
 	}, nil
 }
 
@@ -95,6 +113,28 @@ func parsePrivateKey(privateKeyInput string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
+// createClientWithAuth creates a GitHub client with authentication and proper base URL
+func (auth *GitHubAppAuth) createClientWithAuth(ctx context.Context, token string) (*github.Client, error) {
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	tc := oauth2.NewClient(ctx, ts)
+	client := github.NewClient(tc)
+
+	// Set custom base URL for GitHub Enterprise if configured
+	if auth.baseURL != "" {
+		baseURL := auth.baseURL
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL += "/"
+		}
+		var err error
+		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set GitHub Enterprise URL: %w", err)
+		}
+	}
+
+	return client, nil
+}
+
 // generateJWT creates a JWT token for GitHub App authentication
 func (auth *GitHubAppAuth) generateJWT() (string, error) {
 	now := time.Now()
@@ -122,9 +162,10 @@ func (auth *GitHubAppAuth) ListInstallations(ctx context.Context) ([]*Installati
 	}
 
 	// Create authenticated client with JWT
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: jwtToken})
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client, err := auth.createClientWithAuth(ctx, jwtToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authenticated client: %w", err)
+	}
 
 	// List all installations
 	opts := &github.ListOptions{PerPage: 100}
@@ -199,9 +240,10 @@ func (auth *GitHubAppAuth) generateInstallationAccessToken(ctx context.Context, 
 	}
 
 	// Create authenticated client with JWT
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: jwtToken})
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client, err := auth.createClientWithAuth(ctx, jwtToken)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to create authenticated client: %w", err)
+	}
 
 	// Create installation access token
 	token, _, err := client.Apps.CreateInstallationToken(ctx, installationID, nil)
@@ -215,9 +257,10 @@ func (auth *GitHubAppAuth) generateInstallationAccessToken(ctx context.Context, 
 // getInstallationRepositories fetches repositories accessible by an installation
 func (auth *GitHubAppAuth) getInstallationRepositories(ctx context.Context, accessToken string, installationID int64) ([]string, error) {
 	// Create client with installation access token
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client, err := auth.createClientWithAuth(ctx, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authenticated client: %w", err)
+	}
 
 	opts := &github.ListOptions{PerPage: 100}
 	var repositories []string
@@ -248,9 +291,15 @@ func (auth *GitHubAppAuth) getInstallationRepositories(ctx context.Context, acce
 
 // CreateInstallationClient creates a GitHub client authenticated with an installation access token
 func (auth *GitHubAppAuth) CreateInstallationClient(ctx context.Context, installation *Installation) *github.Client {
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: installation.AccessToken})
-	tc := oauth2.NewClient(ctx, ts)
-	return github.NewClient(tc)
+	client, err := auth.createClientWithAuth(ctx, installation.AccessToken)
+	if err != nil {
+		// Log error but return a basic client to maintain backward compatibility
+		auth.logger.WithError(err).Warn("failed to create client with base URL, falling back to default")
+		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: installation.AccessToken})
+		tc := oauth2.NewClient(ctx, ts)
+		return github.NewClient(tc)
+	}
+	return client
 }
 
 // RefreshInstallationToken refreshes an installation access token if it's expired or about to expire
