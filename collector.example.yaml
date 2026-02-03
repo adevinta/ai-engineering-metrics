@@ -96,14 +96,20 @@ pipelines:
       #     type: identity  # Map repository names to themselves
 
     publishers:
-      - name: getdx
-        type: getdx
-        enabled: true
+      # Main GetDX publisher for Claude usage metrics
+      - type: getdx
         config:
-          api_url: https://api.getdx.com/v1/metrics
-          api_key: ${GETDX_API_KEY}
+          api_base_url: https://api.getdx.com
+          api_token: ${env.GETDX_API_KEY}
           tools:
           - claude
+
+      # GetDX AI-enabled repositories publisher for AI readiness metrics
+      - type: getdx-ai-enabled-repos
+        config:
+          api_base_url: https://api.getdx.com
+          api_token: ${env.GETDX_API_KEY}
+          tools:
           - ai-readiness          # Individual repository AI readiness status
           - ai-readiness-summary  # Organizational AI readiness percentages
 
