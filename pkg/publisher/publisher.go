@@ -33,6 +33,12 @@ func NewPublisher(cfg PublisherConfig, userList users.UsersList) (Publisher, err
 			return nil, fmt.Errorf("failed to create publisher: %w", err)
 		}
 		return p, nil
+	case "getdx-ai-enabled-repos":
+		p, err := NewGetDXAIEnabledReposPublisher(cfg.Config, userList)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create ai-enabled-repos getdx publisher: %w", err)
+		}
+		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown publisher type: %s", cfg.Type)
 	}
