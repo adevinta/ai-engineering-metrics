@@ -29,8 +29,13 @@ pipelines:
         type: github
         enabled: false  # Enable when ready to use
         config:
-          github_token: ${env.GITHUB_TOKEN}  # GitHub Personal Access Token with repo read permissions
-          # github_base_url: https://your-ghe-instance.com/api/v3/  # For GitHub Enterprise - uncomment and set your GHE API URL
+          # AUTHENTICATION: GitHub App authentication (required)
+          app_id: ${env.GITHUB_APP_ID}          # GitHub App ID from app settings
+          private_key: ${env.GITHUB_PRIVATE_KEY}  # Private key content or file path
+          # Setup guide: See claudedocs/github-app-configuration.md
+
+          # Optional: GitHub Enterprise base URL
+          # github_base_url: https://your-ghe-instance.com/api/v3/
 
           # SCANNING OPTIONS (choose one or combine):
 
@@ -43,8 +48,8 @@ pipelines:
           # Option 2: Scan all repositories user has direct access to
           scan_all_repos: false
 
-          # Option 3: Scan ALL repositories from ALL organizations user belongs to (most comprehensive)
-          # This discovers organizations first, then scans all repos within them
+          # Option 3: Scan ALL repositories from ALL organizations (RECOMMENDED)
+          # Uses GitHub App installations to discover organizations and repositories
           scan_all_organizations: false
 
           # Optional: Filter organizations when using scan_all_repos or scan_all_organizations
@@ -61,9 +66,34 @@ pipelines:
             - "AGENTS.md"
             - "agents.md"
             - ".github/copilot-instructions.md"
+            - ".claude/instructions.md"        # Additional AI instruction files
+            - "AI_GUIDELINES.md"
         user_mapping:
           type: passthrough
           config: {}
+
+      # ALTERNATIVE: Organization-focused configuration
+      # Uncomment and use instead of the above for organization-wide scanning
+      # - name: github-ai-readiness-org
+      #   type: github
+      #   enabled: true
+      #   config:
+      #     # GitHub App authentication (required)
+      #     app_id: ${env.GITHUB_APP_ID}
+      #     private_key: ${env.GITHUB_PRIVATE_KEY}
+      #
+      #     # Scan all organizations where the app is installed
+      #     scan_all_organizations: true
+      #
+      #     # Optional: filter to specific organizations
+      #     organization_filter:
+      #       - "my-primary-org"
+      #       - "partner-org"
+      #
+      #     # GitHub Enterprise support
+      #     # github_base_url: https://github.mycompany.com/api/v3
+      #   user_mapping:
+      #     type: identity  # Map repository names to themselves
 
     publishers:
       - name: getdx

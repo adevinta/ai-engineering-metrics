@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 	"github.com/google/go-github/v75/github"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 )
 
 // GitHubCollector collects AI readiness metrics from GitHub repositories
@@ -25,6 +25,9 @@ type GitHubCollector struct {
 	organizationFilter   []string // Optional: filter organizations when scanning
 	mapper               mapper.UserIDMapper
 	filter               users.UsersList
+	// GitHub App authentication fields
+	githubApp     *GitHubAppAuth  // GitHub App authentication handler
+	installations []*Installation // GitHub App installations cache
 }
 
 var _ Collector = (*GitHubCollector)(nil)
@@ -56,20 +59,9 @@ type OrganizationSummaryMetrics struct {
 
 // NewGitHubCollector creates a new GitHub collector
 func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collector, error) {
-	// Extract GitHub token
-	tokenRaw, ok := cfg.Config["github_token"].(string)
-	if !ok {
-		return nil, fmt.Errorf("github_token is required for github collector")
-	}
-
-	// Expand environment variables
-	token, err := lcel.ExpandEnv(tokenRaw)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand github_token: %w", err)
-	}
-
-	if token == "" {
-		return nil, fmt.Errorf("github_token cannot be empty")
+	// GitHub App authentication is required
+	if err := validateGitHubAppConfig(cfg.Config); err != nil {
+		return nil, fmt.Errorf("GitHub App configuration required: %w", err)
 	}
 
 	// Extract GitHub base URL (optional, defaults to public GitHub)
@@ -80,6 +72,62 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 			return nil, fmt.Errorf("failed to expand github_base_url: %w", err)
 		}
 		baseURL = expandedBaseURL
+	}
+
+	// Extract app ID
+	appIDRaw := cfg.Config["app_id"]
+	var appID int64
+	switch v := appIDRaw.(type) {
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("app_id must be a valid integer: %w", err)
+		}
+		appID = parsed
+	case int:
+		appID = int64(v)
+	case int64:
+		appID = v
+	case float64:
+		appID = int64(v)
+	default:
+		return nil, fmt.Errorf("app_id must be a number")
+	}
+
+	// Extract and expand private key
+	privateKeyRaw, ok := cfg.Config["private_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("private_key must be a string")
+	}
+
+	privateKey, err := lcel.ExpandEnv(privateKeyRaw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand private_key: %w", err)
+	}
+
+	if privateKey == "" {
+		return nil, fmt.Errorf("private_key cannot be empty")
+	}
+
+	// Create GitHub App auth handler
+	logger := logging.LoggerFromCtx(context.Background()).WithField("component", "github_app_auth")
+	githubApp, err := NewGitHubAppAuth(appID, privateKey, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub App authentication: %w", err)
+	}
+
+	// Create a basic client for now (will be replaced with installation-specific clients during collection)
+	client := github.NewClient(nil)
+
+	// Set custom base URL for GitHub Enterprise
+	if baseURL != "" {
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL += "/"
+		}
+		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set GitHub Enterprise URL: %w", err)
+		}
 	}
 
 	// Check for scan_all_repos option
@@ -147,22 +195,6 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 		return nil, fmt.Errorf("failed to create user mapper: %w", err)
 	}
 
-	// Create GitHub client with OAuth2 token
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-	tc := oauth2.NewClient(context.Background(), ts)
-	client := github.NewClient(tc)
-
-	// Set custom base URL for GitHub Enterprise
-	if baseURL != "" {
-		if !strings.HasSuffix(baseURL, "/") {
-			baseURL += "/"
-		}
-		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to set GitHub Enterprise URL: %w", err)
-		}
-	}
-
 	return &GitHubCollector{
 		client:               client,
 		repositories:         repositories,
@@ -172,6 +204,7 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 		organizationFilter:   organizationFilter,
 		mapper:               userMapper,
 		filter:               userList,
+		githubApp:            githubApp,
 	}, nil
 }
 
@@ -193,6 +226,23 @@ func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (ma
 	logger := logging.LoggerFromCtx(ctx)
 
 	logger.Info("starting github ai readiness collection")
+
+	// Initialize GitHub App installations
+	logger.Info("using GitHub App authentication")
+	installations, err := g.githubApp.ListInstallations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list GitHub App installations: %w", err)
+	}
+	g.installations = installations
+
+	logger.WithField("installations_count", len(installations)).Info("GitHub App installations loaded")
+	for _, installation := range installations {
+		logger.WithFields(logrus.Fields{
+			"installation_id": installation.ID,
+			"account":         installation.Account,
+			"repositories":    len(installation.Repositories),
+		}).Debug("installation loaded")
+	}
 
 	scanTime := time.Now()
 	metrics := make(map[ToolUsage]Metric)
@@ -383,136 +433,52 @@ func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (ma
 func (g *GitHubCollector) getAllOrganizationRepositories(ctx context.Context) ([]string, error) {
 	logger := logging.LoggerFromCtx(ctx)
 
-	// First, get all organizations the user has access to
-	organizations, err := g.getAllAccessibleOrganizations(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get accessible organizations: %w", err)
-	}
-
-	logger.WithField("organizations_found", len(organizations)).Debug("discovered organizations")
-
+	// Use GitHub App installations to get repositories
 	var allRepos []string
-
-	// For each organization, get all repositories
-	for _, orgName := range organizations {
-		orgLogger := logger.WithField("organization", orgName)
-		orgLogger.Debug("fetching repositories for organization")
-
-		opts := &github.RepositoryListByOrgOptions{
-			ListOptions: github.ListOptions{PerPage: 100},
+	for _, installation := range g.installations {
+		// Apply organization filter if specified
+		if len(g.organizationFilter) > 0 && !g.isOrganizationAllowed(installation.Account) {
+			logger.WithField("organization", installation.Account).Debug("skipping organization - not in filter")
+			continue
 		}
 
-		orgRepos := 0
-		for {
-			repos, resp, err := g.client.Repositories.ListByOrg(ctx, orgName, opts)
-			if err != nil {
-				orgLogger.WithError(err).Error("failed to list repositories for organization")
-				break // Continue with next organization instead of failing completely
-			}
+		logger.WithFields(logrus.Fields{
+			"installation_id": installation.ID,
+			"account":         installation.Account,
+			"repositories":    len(installation.Repositories),
+		}).Debug("adding installation repositories")
 
-			for _, repo := range repos {
-				repoName := repo.GetFullName()
-				allRepos = append(allRepos, repoName)
-				orgRepos++
-			}
-
-			if resp.NextPage == 0 {
-				break
-			}
-			opts.Page = resp.NextPage
-		}
-
-		orgLogger.WithField("repos_found", orgRepos).Debug("completed organization repository scan")
+		allRepos = append(allRepos, installation.Repositories...)
 	}
 
-	logger.WithField("total_org_repos", len(allRepos)).Debug("completed organization repository discovery")
+	logger.WithField("total_org_repos", len(allRepos)).Debug("completed GitHub App organization repository discovery")
 	return allRepos, nil
 }
 
-// getAllAccessibleOrganizations fetches all organizations the authenticated user has access to
-func (g *GitHubCollector) getAllAccessibleOrganizations(ctx context.Context) ([]string, error) {
-	logger := logging.LoggerFromCtx(ctx)
 
-	var organizations []string
-
-	opts := &github.ListOptions{PerPage: 100}
-
-	logger.Debug("fetching accessible organizations")
-
-	for {
-		orgs, resp, err := g.client.Organizations.List(ctx, "", opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list organizations: %w", err)
-		}
-
-		for _, org := range orgs {
-			orgName := org.GetLogin()
-
-			// Apply organization filter if specified
-			if len(g.organizationFilter) > 0 {
-				if !g.isOrganizationAllowed(orgName) {
-					logger.WithField("organization", orgName).Debug("skipping organization - not in filter")
-					continue
-				}
-			}
-
-			organizations = append(organizations, orgName)
-		}
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	logger.WithField("total_accessible_orgs", len(organizations)).Debug("completed organization discovery")
-	return organizations, nil
-}
-
-// getAllAccessibleRepositories fetches all repositories the authenticated user has access to
+// getAllAccessibleRepositories fetches all repositories accessible through GitHub App installations
 func (g *GitHubCollector) getAllAccessibleRepositories(ctx context.Context) ([]string, error) {
 	logger := logging.LoggerFromCtx(ctx)
 
+	// GitHub App authentication uses installation-based repository discovery
 	var allRepos []string
+	for _, installation := range g.installations {
+		// Apply organization filter if specified
+		if len(g.organizationFilter) > 0 && !g.isOrganizationAllowed(installation.Account) {
+			logger.WithField("organization", installation.Account).Debug("skipping installation - not in filter")
+			continue
+		}
 
-	// List repositories for the authenticated user
-	opts := &github.RepositoryListByAuthenticatedUserOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
+		logger.WithFields(logrus.Fields{
+			"installation_id": installation.ID,
+			"account":         installation.Account,
+			"repositories":    len(installation.Repositories),
+		}).Debug("adding installation repositories")
+
+		allRepos = append(allRepos, installation.Repositories...)
 	}
 
-	logger.Debug("fetching accessible repositories")
-
-	for {
-		repos, resp, err := g.client.Repositories.ListByAuthenticatedUser(ctx, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list repositories: %w", err)
-		}
-
-		for _, repo := range repos {
-			repoName := repo.GetFullName()
-
-			// Apply organization filter if specified
-			if len(g.organizationFilter) > 0 {
-				owner := repo.GetOwner().GetLogin()
-				if !g.isOrganizationAllowed(owner) {
-					logger.WithFields(logrus.Fields{
-						"repository":   repoName,
-						"organization": owner,
-					}).Debug("skipping repository - organization not in filter")
-					continue
-				}
-			}
-
-			allRepos = append(allRepos, repoName)
-		}
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	logger.WithField("total_accessible_repos", len(allRepos)).Debug("completed repository discovery")
+	logger.WithField("total_accessible_repos", len(allRepos)).Debug("completed GitHub App repository discovery")
 	return allRepos, nil
 }
 
@@ -530,12 +496,40 @@ func (g *GitHubCollector) isOrganizationAllowed(org string) bool {
 	return false
 }
 
+// getClientForRepository returns the appropriate GitHub client for the given repository owner
+func (g *GitHubCollector) getClientForRepository(ctx context.Context, owner string) *github.Client {
+	// Find the installation for this owner
+	for _, installation := range g.installations {
+		if installation.Account == owner {
+			// Refresh token if needed
+			if err := g.githubApp.RefreshInstallationToken(ctx, installation); err != nil {
+				// Log the error but continue with potentially expired token
+				logging.LoggerFromCtx(ctx).WithFields(logrus.Fields{
+					"installation_id": installation.ID,
+					"account":         installation.Account,
+					"error":          err,
+				}).Warn("failed to refresh installation token")
+			}
+
+			// Create client with installation access token
+			return g.githubApp.CreateInstallationClient(ctx, installation)
+		}
+	}
+
+	// Fallback to default client if no installation found
+	logging.LoggerFromCtx(ctx).WithField("owner", owner).Warn("no GitHub App installation found for owner, using default client")
+	return g.client
+}
+
 // scanRepository checks a single repository for AI readiness indicators
 func (g *GitHubCollector) scanRepository(ctx context.Context, owner, repo string) (bool, []string, *github.Repository, error) {
 	logger := logging.LoggerFromCtx(ctx)
 
+	// Get the appropriate client for this repository
+	client := g.getClientForRepository(ctx, owner)
+
 	// Get repository information
-	repoInfo, _, err := g.client.Repositories.Get(ctx, owner, repo)
+	repoInfo, _, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
 		return false, nil, nil, fmt.Errorf("failed to get repository info: %w", err)
 	}
@@ -544,7 +538,7 @@ func (g *GitHubCollector) scanRepository(ctx context.Context, owner, repo string
 
 	// Check for AI indicators in the repository root
 	for _, indicator := range g.aiIndicators {
-		exists, err := g.checkFileExists(ctx, owner, repo, indicator)
+		exists, err := g.checkFileExists(ctx, client, owner, repo, indicator)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"owner":     owner,
@@ -573,8 +567,8 @@ func (g *GitHubCollector) scanRepository(ctx context.Context, owner, repo string
 }
 
 // checkFileExists checks if a file exists in the repository root using GitHub Contents API
-func (g *GitHubCollector) checkFileExists(ctx context.Context, owner, repo, filename string) (bool, error) {
-	_, _, _, err := g.client.Repositories.GetContents(ctx, owner, repo, filename, nil)
+func (g *GitHubCollector) checkFileExists(ctx context.Context, client *github.Client, owner, repo, filename string) (bool, error) {
+	_, _, _, err := client.Repositories.GetContents(ctx, owner, repo, filename, nil)
 	if err != nil {
 		// GitHub API returns 404 if file doesn't exist
 		if isNotFoundError(err) {
