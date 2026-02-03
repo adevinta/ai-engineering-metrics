@@ -102,7 +102,7 @@ type DXCustomMetricResponse struct {
 
 func (c *DatacloudAPIClient) PushCustomMetric(ctx context.Context, metric DXCustomMetric) (DXCustomMetricResponse, error) {
 	resp := DXCustomMetricResponse{}
-	if err := c.dxClient.post(fmt.Sprintf("%s/api/custom-metrics", c.apiURL), nil, metric, &resp); err != nil {
+	if err := c.dxClient.post(fmt.Sprintf("%s/api/customMetrics.push", c.apiURL), nil, metric, &resp); err != nil {
 		return DXCustomMetricResponse{}, err
 	}
 	return resp, nil
