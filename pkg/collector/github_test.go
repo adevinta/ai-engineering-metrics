@@ -496,12 +496,12 @@ func TestGitHubCollector_ScanAllRepos(t *testing.T) {
 // Test processRepository with various scenarios
 func TestGitHubCollector_processRepository(t *testing.T) {
 	tests := []struct {
-		name          string
-		repoName      string
-		wantErr       bool
-		errMsg        string
-		shouldSkip    bool
-		setupMock     func(*GitHubCollector)
+		name       string
+		repoName   string
+		wantErr    bool
+		errMsg     string
+		shouldSkip bool
+		setupMock  func(*GitHubCollector)
 	}{
 		{
 			name:       "invalid repository format - missing slash",
@@ -570,12 +570,12 @@ func TestGitHubCollector_ParallelProcessing(t *testing.T) {
 		// the other repositories are still processed successfully
 
 		collector := &GitHubCollector{
-			client:       github.NewClient(nil),
+			client: github.NewClient(nil),
 			repositories: []string{
 				"owner/valid-repo-1",
-				"invalid-format",      // This will fail
+				"invalid-format", // This will fail
 				"owner/valid-repo-2",
-				"another-invalid",     // This will also fail
+				"another-invalid", // This will also fail
 				"owner/valid-repo-3",
 			},
 			aiIndicators: []string{"CLAUDE.md"},
