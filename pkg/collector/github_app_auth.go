@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-github/v75/github"
 	"github.com/sirupsen/logrus"
@@ -344,7 +345,12 @@ func validateGitHubAppConfig(config map[string]any) error {
 	var appIDInt int64
 	switch v := appIDRaw.(type) {
 	case string:
-		parsed, err := strconv.ParseInt(v, 10, 64)
+		// Expand environment variables in the string
+		expandedAppID, err := lcel.ExpandEnv(v)
+		if err != nil {
+			return fmt.Errorf("failed to expand app_id: %w", err)
+		}
+		parsed, err := strconv.ParseInt(expandedAppID, 10, 64)
 		if err != nil {
 			return fmt.Errorf("app_id must be a valid integer: %w", err)
 		}
