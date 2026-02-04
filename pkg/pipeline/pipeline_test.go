@@ -11,16 +11,16 @@ import (
 
 func TestPipelineWithOptionalUsers(t *testing.T) {
 	tests := []struct {
-		name     string
-		config   PipelineConfig
-		expectErr bool
+		name            string
+		config          PipelineConfig
+		expectErr       bool
 		checkUserFilter func(users.UsersList) bool
 	}{
 		{
 			name: "pipeline with users field",
 			config: PipelineConfig{
 				Users: &users.UserList{
-					Type: "all",
+					Type:   "all",
 					Config: map[string]interface{}{},
 				},
 				Collectors: []collector.CollectorConfig{},
@@ -34,7 +34,7 @@ func TestPipelineWithOptionalUsers(t *testing.T) {
 		{
 			name: "pipeline without users field (optional)",
 			config: PipelineConfig{
-				Users: nil, // No users field
+				Users:      nil, // No users field
 				Collectors: []collector.CollectorConfig{},
 				Publishers: []publisher.PublisherConfig{},
 			},

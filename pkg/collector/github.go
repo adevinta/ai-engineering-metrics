@@ -455,7 +455,6 @@ func (g *GitHubCollector) getAllOrganizationRepositories(ctx context.Context) ([
 	return allRepos, nil
 }
 
-
 // getAllAccessibleRepositories fetches all repositories accessible through GitHub App installations
 func (g *GitHubCollector) getAllAccessibleRepositories(ctx context.Context) ([]string, error) {
 	logger := logging.LoggerFromCtx(ctx)
@@ -507,7 +506,7 @@ func (g *GitHubCollector) getClientForRepository(ctx context.Context, owner stri
 				logging.LoggerFromCtx(ctx).WithFields(logrus.Fields{
 					"installation_id": installation.ID,
 					"account":         installation.Account,
-					"error":          err,
+					"error":           err,
 				}).Warn("failed to refresh installation token")
 			}
 

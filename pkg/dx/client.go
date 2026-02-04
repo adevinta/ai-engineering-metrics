@@ -104,7 +104,7 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 			logger.WithError(err).Error("failed to read error response body")
 		} else {
 			logger.WithFields(logrus.Fields{
-				"status_code": resp.StatusCode,
+				"status_code":   resp.StatusCode,
 				"response_body": string(body),
 			}).Error("dx api returned non-200 status")
 		}

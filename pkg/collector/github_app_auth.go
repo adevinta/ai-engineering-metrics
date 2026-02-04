@@ -140,9 +140,9 @@ func (auth *GitHubAppAuth) generateJWT() (string, error) {
 	now := time.Now()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss": auth.appID,                        // Issuer: GitHub App ID
-		"iat": now.Unix(),                        // Issued at
-		"exp": now.Add(10 * time.Minute).Unix(),  // Expires in 10 minutes (GitHub max)
+		"iss": auth.appID,                       // Issuer: GitHub App ID
+		"iat": now.Unix(),                       // Issued at
+		"exp": now.Add(10 * time.Minute).Unix(), // Expires in 10 minutes (GitHub max)
 	})
 
 	tokenString, err := token.SignedString(auth.privateKey)
@@ -203,7 +203,7 @@ func (auth *GitHubAppAuth) ListInstallations(ctx context.Context) ([]*Installati
 			auth.logger.WithFields(logrus.Fields{
 				"installation_id": install.GetID(),
 				"account":         installation.Account,
-				"error":          err,
+				"error":           err,
 			}).Warn("failed to generate access token for installation, skipping")
 			continue
 		}
@@ -217,7 +217,7 @@ func (auth *GitHubAppAuth) ListInstallations(ctx context.Context) ([]*Installati
 			auth.logger.WithFields(logrus.Fields{
 				"installation_id": install.GetID(),
 				"account":         installation.Account,
-				"error":          err,
+				"error":           err,
 			}).Warn("failed to get installation repositories")
 			repositories = []string{} // Continue with empty repository list
 		}

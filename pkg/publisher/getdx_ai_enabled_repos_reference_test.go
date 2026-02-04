@@ -17,10 +17,10 @@ func TestReference_Sanitization(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		orgName      string
-		expectedRef  string
-		toolName     string
+		name        string
+		orgName     string
+		expectedRef string
+		toolName    string
 	}{
 		{
 			name:        "organization with hyphens",
@@ -54,10 +54,10 @@ func TestReference_Sanitization(t *testing.T) {
 				}
 			} else {
 				metrics = map[string]any{
-					"repository":    "test/repo",
-					"organization":  tt.orgName,
-					"is_ai_ready":   true,
-					"files_found":   []string{"CLAUDE.md"},
+					"repository":   "test/repo",
+					"organization": tt.orgName,
+					"is_ai_ready":  true,
+					"files_found":  []string{"CLAUDE.md"},
 				}
 			}
 

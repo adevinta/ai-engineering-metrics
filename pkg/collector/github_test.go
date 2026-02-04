@@ -83,8 +83,8 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "invalid app_id type",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"app_id":      []string{"invalid"},
-					"private_key": "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+					"app_id":       []string{"invalid"},
+					"private_key":  "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -119,8 +119,8 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "empty private_key",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"app_id":      123456,
-					"private_key": "",
+					"app_id":       123456,
+					"private_key":  "",
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -131,8 +131,8 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "invalid private_key format",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"app_id":      123456,
-					"private_key": "not-a-valid-key",
+					"app_id":       123456,
+					"private_key":  "not-a-valid-key",
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -157,8 +157,8 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "valid GitHub App configuration",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"app_id":      "123456",
-					"private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAqFO5xwz5SX...sample...key...-----END RSA PRIVATE KEY-----",
+					"app_id":       "123456",
+					"private_key":  "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAqFO5xwz5SX...sample...key...-----END RSA PRIVATE KEY-----",
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -169,7 +169,7 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "missing app_id with private_key",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"private_key": "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+					"private_key":  "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -180,7 +180,7 @@ func TestNewGitHubCollector(t *testing.T) {
 			name: "missing private_key with app_id",
 			config: CollectorConfig{
 				Config: map[string]any{
-					"app_id": 123456,
+					"app_id":       123456,
 					"repositories": []interface{}{"owner/repo"},
 				},
 			},
@@ -414,8 +414,8 @@ func TestGitHubCollector_ScanAllOrganizations(t *testing.T) {
 	// This would test the scan_all_organizations functionality
 	config := CollectorConfig{
 		Config: map[string]any{
-			"app_id":      "${env.GITHUB_APP_ID}",
-			"private_key": "${env.GITHUB_PRIVATE_KEY}",
+			"app_id":                 "${env.GITHUB_APP_ID}",
+			"private_key":            "${env.GITHUB_PRIVATE_KEY}",
 			"scan_all_organizations": true,
 			"organization_filter": []interface{}{
 				"adevinta", // Only scan adevinta organization
@@ -457,8 +457,8 @@ func TestGitHubCollector_ScanAllRepos(t *testing.T) {
 	// This would test the scan_all_repos functionality
 	config := CollectorConfig{
 		Config: map[string]any{
-			"app_id":      "${env.GITHUB_APP_ID}",
-			"private_key": "${env.GITHUB_PRIVATE_KEY}",
+			"app_id":         "${env.GITHUB_APP_ID}",
+			"private_key":    "${env.GITHUB_PRIVATE_KEY}",
 			"scan_all_repos": true,
 			"organization_filter": []interface{}{
 				"adevinta", // Only scan adevinta repos

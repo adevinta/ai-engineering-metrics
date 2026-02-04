@@ -129,7 +129,7 @@ func (p *GetDXAIEnabledReposPublisher) Publish(ctx context.Context, start, end t
 
 	logger.WithFields(logrus.Fields{
 		"published_metrics": publishedCount,
-		"errors":           len(errors),
+		"errors":            len(errors),
 	}).Info("completed dx custom metric publishing")
 
 	if len(errors) > 0 {
@@ -247,4 +247,3 @@ func sanitizeKey(repository string) string {
 	result = strings.ToLower(result)
 	return result
 }
-
