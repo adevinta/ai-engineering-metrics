@@ -79,7 +79,12 @@ func NewGitHubCollector(cfg CollectorConfig, userList users.UsersList) (Collecto
 	var appID int64
 	switch v := appIDRaw.(type) {
 	case string:
-		parsed, err := strconv.ParseInt(v, 10, 64)
+		// Expand environment variables in the string
+		expandedAppID, err := lcel.ExpandEnv(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand app_id: %w", err)
+		}
+		parsed, err := strconv.ParseInt(expandedAppID, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("app_id must be a valid integer: %w", err)
 		}
