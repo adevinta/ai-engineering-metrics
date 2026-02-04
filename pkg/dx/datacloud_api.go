@@ -81,3 +81,29 @@ type DXAIMetricResponse struct {
 type DXAIMetricsResponse struct {
 	Data []DXAIMetricResponse `json:"data"`
 }
+
+// DXCustomMetric represents a custom metric in GetDX format
+type DXCustomMetric struct {
+	Reference string         `json:"reference"`
+	Key       string         `json:"key"`
+	Value     float64        `json:"value"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Timestamp string         `json:"timestamp"`
+}
+
+type DXCustomMetricResponse struct {
+	ID        string         `json:"id"`
+	Reference string         `json:"reference"`
+	Key       string         `json:"key"`
+	Value     float64        `json:"value"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Timestamp string         `json:"timestamp"`
+}
+
+func (c *DatacloudAPIClient) PushCustomMetric(ctx context.Context, metric DXCustomMetric) (DXCustomMetricResponse, error) {
+	resp := DXCustomMetricResponse{}
+	if err := c.dxClient.post(fmt.Sprintf("%s/api/customMetrics.push", c.apiURL), nil, metric, &resp); err != nil {
+		return DXCustomMetricResponse{}, err
+	}
+	return resp, nil
+}

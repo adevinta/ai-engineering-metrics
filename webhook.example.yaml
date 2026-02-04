@@ -1,12 +1,21 @@
+# GitHub Webhook Configuration
+# This configuration handles GitHub webhooks for real-time event tracking
+# Note: Webhook authentication is independent of collector authentication methods
+
 github:
+  # GitHub webhook secret for verifying webhook authenticity
   webhook_secret: ${env.GITHUB_WEBHOOK_SECRET}
-  if: ${headers["X-GitHub-Event"][0] == "pull_request" || headers["X-GitHub-Event"][0] == "pull_request_review"}
+
+  # Pass-through configuration: Forward events to GetDX
   pass_thru:
   - if: ${method == "POST"}
     url: https://${env.NAMESPACE}.getdx.net/webhooks/github
     method: ${method}
+
+  # DX tracking configuration
   dx:
     track_event:
+    # Track pull request opened events
     - api_key: ${env.GETDX_API_KEY}
       if: ${body.action == "opened"}
       event_name: github.pull_request.${body.action}
@@ -17,3 +26,5 @@ github:
         pull_request: ${body.pull_request.number}
         pull_request_url: ${body.pull_request.html_url}
         pull_request_title: ${body.pull_request.title}
+        organization: ${body.repository.owner.login}
+        repository_full_name: ${body.repository.full_name}

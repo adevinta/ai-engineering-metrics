@@ -12,12 +12,31 @@ type UsersList interface {
 	List() []string
 }
 
+// AllowAllUserFilter allows all users - used when no user filtering is needed
+type AllowAllUserFilter struct{}
+
+var _ UsersList = &AllowAllUserFilter{}
+
+func NewAllowAllUserFilter() *AllowAllUserFilter {
+	return &AllowAllUserFilter{}
+}
+
+func (f *AllowAllUserFilter) Include(userID string) bool {
+	return true // Allow all users
+}
+
+func (f *AllowAllUserFilter) List() []string {
+	return []string{} // Empty list since we allow all
+}
+
 func NewUserList(cfg UserList) (UsersList, error) {
 	switch cfg.Type {
 	case "static":
 		return NewStaticUserList(cfg.Config)
 	case "getdx":
 		return NewGetDXUsers(cfg.Config)
+	case "all":
+		return NewAllowAllUserFilter(), nil
 	default:
 		return nil, fmt.Errorf("unknown filter type: %s", cfg.Type)
 	}

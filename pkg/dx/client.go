@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -78,6 +79,9 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 		"payload_size": len(data),
 	}).Info("sending dx api request")
 
+	// Debug log the request payload
+	logger.WithField("request_payload", string(data)).Debug("dx api request payload")
+
 	requestStart := time.Now()
 	resp, err := c.Do(req)
 	duration := time.Since(requestStart)
@@ -94,7 +98,16 @@ func (c *dxClient) post(url string, values url.Values, input, out any) error {
 	}).Info("received dx api response")
 
 	if resp.StatusCode != http.StatusOK {
-		logger.WithField("status_code", resp.StatusCode).Error("dx api returned non-200 status")
+		// Read the response body for debugging
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.WithError(err).Error("failed to read error response body")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"status_code":   resp.StatusCode,
+				"response_body": string(body),
+			}).Error("dx api returned non-200 status")
+		}
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 

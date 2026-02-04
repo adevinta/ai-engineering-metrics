@@ -46,7 +46,7 @@ func NewPipelines(cfg Config) ([]Pipeline, error) {
 type PipelineConfig struct {
 	Collectors []collector.CollectorConfig `yaml:"collectors"`
 	Publishers []publisher.PublisherConfig `yaml:"publishers"`
-	Users      users.UserList              `yaml:"users"`
+	Users      *users.UserList             `yaml:"users,omitempty"`
 }
 
 type Pipeline struct {
@@ -58,9 +58,16 @@ type Pipeline struct {
 func NewPipeline(cfg PipelineConfig) (Pipeline, error) {
 	pipeline := Pipeline{}
 
-	userList, err := users.NewUserList(cfg.Users)
-	if err != nil {
-		return Pipeline{}, fmt.Errorf("failed to create user list: %w", err)
+	var userList users.UsersList
+	if cfg.Users != nil {
+		var err error
+		userList, err = users.NewUserList(*cfg.Users)
+		if err != nil {
+			return Pipeline{}, fmt.Errorf("failed to create user list: %w", err)
+		}
+	} else {
+		// Default to allow all users when no user filtering is specified
+		userList = users.NewAllowAllUserFilter()
 	}
 	pipeline.Users = userList
 
