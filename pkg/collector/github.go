@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/adevinta/ai-engineering-metrics/pkg/lcel"
@@ -13,6 +14,7 @@ import (
 	"github.com/adevinta/ai-engineering-metrics/pkg/users"
 	"github.com/google/go-github/v75/github"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 // GitHubCollector collects AI readiness metrics from GitHub repositories
@@ -284,103 +286,85 @@ func (g *GitHubCollector) Collect(ctx context.Context, start, end time.Time) (ma
 		}
 	}
 
-	logger.WithField("total_repos_to_scan", len(repositoriesToScan)).Info("processing repositories")
+	logger.WithField("total_repos_to_scan", len(repositoriesToScan)).Info("processing repositories concurrently")
 
-	// Process each repository
+	// Process repositories concurrently with controlled parallelism
+	var (
+		metricsMu      sync.Mutex
+		orgSummariesMu sync.Mutex
+	)
+
+	// Limit concurrent goroutines to avoid overwhelming GitHub API
+	const maxConcurrent = 10
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(maxConcurrent)
+
 	for _, repoName := range repositoriesToScan {
-		parts := strings.SplitN(repoName, "/", 2)
-		if len(parts) != 2 {
-			logger.WithField("repository", repoName).Error("invalid repository format, skipping")
-			continue
-		}
+		repoName := repoName // capture loop variable
 
-		owner, repo := parts[0], parts[1]
-
-		logger.WithFields(logrus.Fields{
-			"owner": owner,
-			"repo":  repo,
-		}).Debug("scanning repository")
-
-		// Check AI readiness
-		isReady, indicators, repoInfo, err := g.scanRepository(ctx, owner, repo)
-		if err != nil {
-			logger.WithFields(logrus.Fields{
-				"owner": owner,
-				"repo":  repo,
-				"error": err,
-			}).Error("failed to scan repository, skipping")
-			continue
-		}
-
-		// Create repository metrics
-		repoMetrics := RepositoryMetrics{
-			Repository:        repoName,
-			Organization:      owner,
-			IsAIReady:         isReady,
-			AIIndicatorsFound: indicators,
-			ScanTimestamp:     scanTime,
-		}
-
-		// Add repository metadata
-		if repoInfo != nil {
-			repoMetrics.RepositoryMetadata.Private = repoInfo.GetPrivate()
-			repoMetrics.RepositoryMetadata.Language = repoInfo.Language
-			repoMetrics.RepositoryMetadata.StarCount = repoInfo.GetStargazersCount()
-			repoMetrics.RepositoryMetadata.ForkCount = repoInfo.GetForksCount()
-			if repoInfo.PushedAt != nil {
-				repoMetrics.RepositoryMetadata.LastPush = repoInfo.PushedAt.Time
+		eg.Go(func() error {
+			result, err := g.processRepository(egCtx, repoName, scanTime)
+			if err != nil {
+				logger.WithError(err).Error("failed to process repository, skipping")
+				return nil // Continue processing other repos
 			}
-		}
 
-		// Map user ID (repository name)
-		mappedUserID, err := g.mapper.Map(ctx, repoName)
-		if err != nil {
-			logger.WithField("repository", repoName).WithError(err).Error("failed to map user ID")
-			mappedUserID = repoName // fallback to original
-		}
-
-		// Check if user should be included
-		if g.filter != nil && !g.filter.Include(mappedUserID) {
-			logger.WithField("repository", repoName).Debug("repository not in user filter, skipping")
-			continue
-		}
-
-		// Add to metrics
-		toolUsage := ToolUsage{
-			UserID:   mappedUserID,
-			ToolName: "ai-readiness",
-		}
-
-		metrics[toolUsage] = Metric{
-			UserID:   mappedUserID,
-			ToolName: "ai-readiness",
-			Metrics: map[string]any{
-				"repository":          repoMetrics.Repository,
-				"organization":        repoMetrics.Organization,
-				"is_ai_ready":         repoMetrics.IsAIReady,
-				"ai_indicators_found": repoMetrics.AIIndicatorsFound,
-				"scan_timestamp":      repoMetrics.ScanTimestamp,
-				"repository_metadata": repoMetrics.RepositoryMetadata,
-			},
-		}
-
-		// Update organization summary
-		if orgSummary, exists := orgSummaries[owner]; exists {
-			orgSummary.TotalReposScanned++
-			if isReady {
-				orgSummary.AIReadyRepos++
+			if result.shouldSkip {
+				return nil // Skip this repository
 			}
-		} else {
-			orgSummaries[owner] = &OrganizationSummaryMetrics{
-				Organization:      owner,
-				TotalReposScanned: 1,
-				AIReadyRepos:      0,
-				ScanTimestamp:     scanTime,
+
+			repoMetrics := result.repoMetrics
+			mappedUserID := result.mappedUserID
+
+			// Add to metrics (thread-safe)
+			toolUsage := ToolUsage{
+				UserID:   mappedUserID,
+				ToolName: "ai-readiness",
 			}
-			if isReady {
-				orgSummaries[owner].AIReadyRepos = 1
+
+			metricsMu.Lock()
+			metrics[toolUsage] = Metric{
+				UserID:   mappedUserID,
+				ToolName: "ai-readiness",
+				Metrics: map[string]any{
+					"repository":          repoMetrics.Repository,
+					"organization":        repoMetrics.Organization,
+					"is_ai_ready":         repoMetrics.IsAIReady,
+					"ai_indicators_found": repoMetrics.AIIndicatorsFound,
+					"scan_timestamp":      repoMetrics.ScanTimestamp,
+					"repository_metadata": repoMetrics.RepositoryMetadata,
+				},
 			}
-		}
+			metricsMu.Unlock()
+
+			// Update organization summary (thread-safe)
+			orgSummariesMu.Lock()
+			if orgSummary, exists := orgSummaries[repoMetrics.Organization]; exists {
+				orgSummary.TotalReposScanned++
+				if repoMetrics.IsAIReady {
+					orgSummary.AIReadyRepos++
+				}
+			} else {
+				aiReadyCount := 0
+				if repoMetrics.IsAIReady {
+					aiReadyCount = 1
+				}
+				orgSummaries[repoMetrics.Organization] = &OrganizationSummaryMetrics{
+					Organization:      repoMetrics.Organization,
+					TotalReposScanned: 1,
+					AIReadyRepos:      aiReadyCount,
+					ScanTimestamp:     scanTime,
+				}
+			}
+			orgSummariesMu.Unlock()
+
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to complete
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("repository scanning failed: %w", err)
 	}
 
 	// Add organization summary metrics
@@ -563,6 +547,78 @@ func (g *GitHubCollector) scanRepository(ctx context.Context, owner, repo string
 	}).Debug("repository scan completed")
 
 	return isReady, foundIndicators, repoInfo, nil
+}
+
+// repositoryScanResult holds the result of scanning a single repository
+type repositoryScanResult struct {
+	repoMetrics  RepositoryMetrics
+	mappedUserID string
+	shouldSkip   bool
+}
+
+// processRepository scans a single repository and returns its metrics
+func (g *GitHubCollector) processRepository(ctx context.Context, repoName string, scanTime time.Time) (*repositoryScanResult, error) {
+	logger := logging.LoggerFromCtx(ctx)
+
+	parts := strings.SplitN(repoName, "/", 2)
+	if len(parts) != 2 {
+		logger.WithField("repository", repoName).Error("invalid repository format")
+		return nil, fmt.Errorf("invalid repository format: %s", repoName)
+	}
+
+	owner, repo := parts[0], parts[1]
+
+	logger.WithFields(logrus.Fields{
+		"owner": owner,
+		"repo":  repo,
+	}).Debug("scanning repository")
+
+	// Check AI readiness
+	isReady, indicators, repoInfo, err := g.scanRepository(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan repository %s/%s: %w", owner, repo, err)
+	}
+
+	// Create repository metrics
+	repoMetrics := RepositoryMetrics{
+		Repository:        repoName,
+		Organization:      owner,
+		IsAIReady:         isReady,
+		AIIndicatorsFound: indicators,
+		ScanTimestamp:     scanTime,
+	}
+
+	// Add repository metadata
+	if repoInfo != nil {
+		repoMetrics.RepositoryMetadata.Private = repoInfo.GetPrivate()
+		repoMetrics.RepositoryMetadata.Language = repoInfo.Language
+		repoMetrics.RepositoryMetadata.StarCount = repoInfo.GetStargazersCount()
+		repoMetrics.RepositoryMetadata.ForkCount = repoInfo.GetForksCount()
+		if repoInfo.PushedAt != nil {
+			repoMetrics.RepositoryMetadata.LastPush = repoInfo.PushedAt.Time
+		}
+	}
+
+	// Map user ID (repository name)
+	mappedUserID, err := g.mapper.Map(ctx, repoName)
+	if err != nil {
+		logger.WithField("repository", repoName).WithError(err).Error("failed to map user ID")
+		mappedUserID = repoName // fallback to original
+	}
+
+	// Check if user should be included
+	if g.filter != nil && !g.filter.Include(mappedUserID) {
+		logger.WithField("repository", repoName).Debug("repository not in user filter, skipping")
+		return &repositoryScanResult{
+			shouldSkip: true,
+		}, nil
+	}
+
+	return &repositoryScanResult{
+		repoMetrics:  repoMetrics,
+		mappedUserID: mappedUserID,
+		shouldSkip:   false,
+	}, nil
 }
 
 // checkFileExists checks if a file exists in the repository root using GitHub Contents API

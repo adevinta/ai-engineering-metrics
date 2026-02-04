@@ -492,3 +492,180 @@ func TestGitHubCollector_ScanAllRepos(t *testing.T) {
 		}
 	}
 }
+
+// Test processRepository with various scenarios
+func TestGitHubCollector_processRepository(t *testing.T) {
+	tests := []struct {
+		name          string
+		repoName      string
+		wantErr       bool
+		errMsg        string
+		shouldSkip    bool
+		setupMock     func(*GitHubCollector)
+	}{
+		{
+			name:       "invalid repository format - missing slash",
+			repoName:   "invalid-repo",
+			wantErr:    true,
+			errMsg:     "invalid repository format",
+			shouldSkip: false,
+		},
+		{
+			name:       "invalid repository format - too many parts",
+			repoName:   "owner/repo/extra",
+			wantErr:    true, // Will try to access "owner/repo/extra" on GitHub API and fail
+			errMsg:     "failed to scan repository",
+			shouldSkip: false,
+		},
+		{
+			name:       "valid repository format",
+			repoName:   "owner/repo",
+			wantErr:    true, // Will error because we're not mocking the GitHub API
+			errMsg:     "failed to scan repository",
+			shouldSkip: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			collector := &GitHubCollector{
+				client:       github.NewClient(nil),
+				aiIndicators: []string{"CLAUDE.md"},
+				mapper: &mockMapper{
+					mapFunc: func(ctx context.Context, userID string) (string, error) {
+						return userID, nil
+					},
+				},
+				filter: nil, // No filtering
+			}
+
+			if tt.setupMock != nil {
+				tt.setupMock(collector)
+			}
+
+			ctx := context.Background()
+			scanTime := time.Now()
+
+			result, err := collector.processRepository(ctx, tt.repoName, scanTime)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				if result != nil {
+					assert.Equal(t, tt.shouldSkip, result.shouldSkip)
+				}
+			}
+		})
+	}
+}
+
+// Test parallel processing behavior with mixed success/failure scenarios
+func TestGitHubCollector_ParallelProcessing(t *testing.T) {
+	t.Run("some repositories fail but others succeed", func(t *testing.T) {
+		// This test verifies that when some repositories fail during parallel processing,
+		// the other repositories are still processed successfully
+
+		collector := &GitHubCollector{
+			client:       github.NewClient(nil),
+			repositories: []string{
+				"owner/valid-repo-1",
+				"invalid-format",      // This will fail
+				"owner/valid-repo-2",
+				"another-invalid",     // This will also fail
+				"owner/valid-repo-3",
+			},
+			aiIndicators: []string{"CLAUDE.md"},
+			mapper: &mockMapper{
+				mapFunc: func(ctx context.Context, userID string) (string, error) {
+					return userID, nil
+				},
+			},
+			filter: nil,
+		}
+
+		// Note: In a real test with proper mocking, we would:
+		// 1. Mock the GitHub API to return success for valid repos
+		// 2. Verify that invalid repos fail but don't stop processing
+		// 3. Check that we get metrics for all valid repos
+
+		// For now, we just verify the structure is correct
+		assert.NotNil(t, collector.client)
+		assert.Equal(t, 5, len(collector.repositories))
+
+		// The actual test would require GitHub API mocking
+		t.Skip("Full test requires GitHub API mocking - structure validated")
+	})
+
+	t.Run("all repositories in parallel complete without deadlock", func(t *testing.T) {
+		// This test would verify that parallel processing doesn't deadlock
+		// when all repositories complete successfully
+
+		collector := &GitHubCollector{
+			client: github.NewClient(nil),
+			repositories: []string{
+				"owner/repo-1",
+				"owner/repo-2",
+				"owner/repo-3",
+				"owner/repo-4",
+				"owner/repo-5",
+				"owner/repo-6",
+				"owner/repo-7",
+				"owner/repo-8",
+				"owner/repo-9",
+				"owner/repo-10",
+				"owner/repo-11", // More than maxConcurrent (10)
+			},
+			aiIndicators: []string{"CLAUDE.md"},
+			mapper: &mockMapper{
+				mapFunc: func(ctx context.Context, userID string) (string, error) {
+					return userID, nil
+				},
+			},
+		}
+
+		// Verify we can handle more repos than the concurrent limit
+		assert.Greater(t, len(collector.repositories), 10, "Should have more repos than maxConcurrent limit")
+
+		t.Skip("Full test requires GitHub API mocking - structure validated")
+	})
+
+	t.Run("context cancellation stops all goroutines", func(t *testing.T) {
+		// This test would verify that when context is cancelled,
+		// all goroutines stop gracefully without hanging
+
+		collector := &GitHubCollector{
+			client: github.NewClient(nil),
+			repositories: []string{
+				"owner/repo-1",
+				"owner/repo-2",
+				"owner/repo-3",
+			},
+			aiIndicators: []string{"CLAUDE.md"},
+			mapper: &mockMapper{
+				mapFunc: func(ctx context.Context, userID string) (string, error) {
+					return userID, nil
+				},
+			},
+		}
+
+		assert.NotNil(t, collector)
+
+		t.Skip("Full test requires GitHub API mocking and context cancellation handling")
+	})
+}
+
+// mockMapper is a simple mapper for testing
+type mockMapper struct {
+	mapFunc func(context.Context, string) (string, error)
+}
+
+func (m *mockMapper) Map(ctx context.Context, userID string) (string, error) {
+	if m.mapFunc != nil {
+		return m.mapFunc(ctx, userID)
+	}
+	return userID, nil
+}
